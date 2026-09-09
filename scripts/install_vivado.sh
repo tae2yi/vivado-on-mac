@@ -35,6 +35,18 @@ fi
 if /home/user/installer/xsetup -c "/home/user/scripts/install_configs/${vivado_version}.txt" -b Install -a "${eula_args}"
 then
     f_echo "Vivado was successfully installed."
+
+    # sudo strips LD_PRELOAD, and only de_start.sh's own process tree re-exports
+    # it, so Desktop/Start Menu launchers crash with "realloc(): invalid
+    # pointer" unless LD_PRELOAD is baked directly into their Exec= line.
+    ld_preload_libs="/lib/x86_64-linux-gnu/libudev.so.1 /lib/x86_64-linux-gnu/libselinux.so.1 /lib/x86_64-linux-gnu/libz.so.1 /lib/x86_64-linux-gnu/libgdk-x11-2.0.so.0"
+    for f in /home/user/Desktop/*.desktop /home/user/.local/share/applications/*.desktop
+    do
+        [ -f "$f" ] || continue
+        grep -q "bin/vivado" "$f" || continue
+        grep -q "LD_PRELOAD" "$f" && continue
+        sed -i "s|^Exec=|Exec=env LD_PRELOAD=\"${ld_preload_libs}\" |" "$f"
+    done
     f_echo "Run start_container.sh to launch it."
 else
     f_echo "An error occurred during installation. Please run cleanup.sh and try again."
