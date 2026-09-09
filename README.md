@@ -1,8 +1,8 @@
 # vivado-on-silicon-mac-2026
 
-This is a fork/derivative of [ichi4096/vivado-on-silicon-mac](https://github.com/ichi4096/vivado-on-silicon-mac), updated and fixed to install **Vivado 2026.1** on Apple Silicon Macs. It runs Vivado inside a Rosetta-accelerated x86_64 Docker container, with the GUI exposed over VNC, exactly like the original project.
+Installs **Vivado 2026.1** on Apple Silicon Macs. It runs Vivado inside a Rosetta-accelerated x86_64 Docker container, with the GUI exposed over VNC.
 
-It is in no way associated with Xilinx, AMD, or the original author. Vivado and Xilinx are trademarks of Xilinx, Inc. / AMD.
+It is in no way associated with Xilinx or AMD. Vivado and Xilinx are trademarks of Xilinx, Inc. / AMD.
 
 ## What's different from the original project
 
@@ -82,3 +82,7 @@ Running these scripts means you agree to Xilinx'/AMD's and third-party EULAs (ob
 This repository contains the modified source code of [xvcd](https://github.com/tmbinc/xvcd) by Felix Domke, as well as a compiled version statically linked against [libusb](https://libusb.info/) and [libftdi](https://www.intra2net.com/en/developer/libftdi/), in accordance with the [LGPL v2.1](https://www.gnu.org/licenses/old-licenses/lgpl-2.1.html) under which both libraries are licensed.
 
 Vivado and Xilinx are trademarks of Xilinx, Inc. Arm is a registered trademark of Arm Limited. Apple, Mac, macOS and Rosetta are trademarks of Apple Inc. Docker and the Docker logo are trademarks of Docker, Inc. Linux® is the registered trademark of Linus Torvalds.
+
+## References
+
+This project's overall approach (Docker + Rosetta + VNC to run Vivado on Apple Silicon) and its scripts are based on [ichi4096/vivado-on-silicon-mac](https://github.com/ichi4096/vivado-on-silicon-mac). See "What's different from the original project" above for what changed to support Vivado 2026.1.
