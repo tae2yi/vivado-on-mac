@@ -40,7 +40,7 @@ For anyone who just wants the environment running with minimal reading. Every st
    5. Close the License Manager and launch Vivado again — it should now open normally.
 
    More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
-8. From then on, just run `./scripts/start_container.sh` to open Vivado.
+8. From then on, just double-click **`Start Vivado.command`** in the repo folder (or run `./scripts/start_container.sh`) to open Vivado.
 
 If anything above fails, jump to [Troubleshooting](#troubleshooting) or the detailed section for that step.
 
@@ -85,11 +85,11 @@ Vivado 2026.1 requires activating a free, node-locked, annually-renewed **BASIC*
 
 ## Everyday usage
 
-Once installed, day to day you only need:
+Once installed, day to day you only need to double-click **`Start Vivado.command`** in the repo's root folder — it's a Finder shortcut that opens a Terminal window and runs `./scripts/start_container.sh` for you. If you'd rather run it yourself from a terminal, that's the same command:
 ```
 ./scripts/start_container.sh
 ```
-This starts the container, opens Screen Sharing to the VNC session, and runs `xvcd` on the host for USB/JTAG forwarding (FT2232C-based cables only — see the [xvcd README](scripts/xvcd/README) for details and limitations of the XVC protocol).
+Either way, this starts the container, opens Screen Sharing to the VNC session, and runs `xvcd` on the host for USB/JTAG forwarding (FT2232C-based cables only — see the [xvcd README](scripts/xvcd/README) for details and limitations of the XVC protocol). To stop, press `Ctrl+C` in the Terminal window it opened (or log out inside the VNC session).
 
 ## Troubleshooting
 
@@ -101,6 +101,7 @@ This starts the container, opens Screen Sharing to the VNC session, and runs `xv
 | Vivado crashes immediately with `realloc(): invalid pointer` | Missing `LD_PRELOAD`. This normally only happens if you launch `bin/vivado` in some way this repo doesn't already patch (see [What changed](#what-changed-from-the-reference-project)) — `install_vivado.sh` should already have fixed every generated launcher automatically. |
 | `ERROR - The value specified for Edition (...) is invalid` during install | The catalog names in `install_configs/202610.txt` don't match what the installer expects. The error itself states the correct name — edit the file and rerun. |
 | Batch install complains about an invalid `Modules=` entry name | Same as above, but for a device/module name instead of the edition. Find the correct name in the installer's error and fix that specific entry (don't remove or reorder others). |
+| Double-clicking `Start Vivado.command` does nothing, or macOS warns it's from an unidentified developer | Gatekeeper blocking a downloaded script the first time. Right-click the file → **Open** → confirm, or run `chmod +x "Start Vivado.command"` once from a terminal. A `git clone` normally doesn't trigger this; downloading the repo as a ZIP is more likely to. |
 
 ## Adapting to a different Vivado version or device
 
@@ -126,7 +127,7 @@ This repo intentionally does **not** include any course-specific example project
 
 Unchanged in purpose from the reference project: `header.sh`, `setup.sh`, `start_container.sh`, `configure_docker.sh`, `gen_image.sh`, `hashes.sh`, `linux_start.sh`, `de_start.sh`, `cleanup.sh`, `xvcd/`, `install_bin`, `vnc_resolution`, `vncpasswd`.
 
-New/changed here: `install_configs/202610.txt` (2026.1 batch config) and the Dockerfile additions described in [What changed](#what-changed-from-the-reference-project).
+New/changed here: `Start Vivado.command` (double-clickable Finder shortcut for `start_container.sh`), `scripts/mac_address` (randomly generated on first run, gitignored — see [What changed](#what-changed-from-the-reference-project)), `install_configs/202610.txt` (2026.1 batch config), and the Dockerfile additions described in [What changed](#what-changed-from-the-reference-project).
 
 ## License, copyright and trademark information
 
