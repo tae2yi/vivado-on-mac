@@ -26,7 +26,10 @@ fi
 killall xvcd > /dev/null 2>&1
 
 # run container
-docker run --init --rm --name vivado_container --mac-address="02:42:ac:11:00:99" --mount type=bind,source="$script_dir/..",target="/home/user" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/linux_start.sh &
+# Reuse the MAC address generated during setup.sh so the Vivado license Host
+# ID (derived from it) stays stable across restarts.
+container_mac=$(tr -d "\n\r\t " < "$script_dir/mac_address")
+docker run --init --rm --name vivado_container --mac-address="$container_mac" --mount type=bind,source="$script_dir/..",target="/home/user" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/linux_start.sh &
 f_echo "Started container"
 sleep 7
 f_echo "Starting VNC viewer"

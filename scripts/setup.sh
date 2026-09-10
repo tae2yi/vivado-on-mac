@@ -157,6 +157,19 @@ mkdir -p "$script_dir/../.config/autostart"
 cp "$script_dir/de_start.desktop" "$script_dir/../.config/autostart/de_start.desktop"
 mkdir "$script_dir/../Desktop"
 
+# Generate a random, locally-administered MAC address for the container and
+# pin it via --mac-address, so it stays the same across container restarts
+# (Docker's default bridge network otherwise doesn't guarantee a stable MAC
+# for --rm containers). This matters because the Vivado license Host ID is
+# derived from this MAC. Generated once per install rather than hardcoded,
+# so that different installs/users don't all end up with the same Host ID.
+if [ ! -f "$script_dir/mac_address" ]
+then
+	random_mac=$(printf '02:%02x:%02x:%02x:%02x:%02x' $((RANDOM % 256)) $((RANDOM % 256)) $((RANDOM % 256)) $((RANDOM % 256)) $((RANDOM % 256)))
+	echo "$random_mac" > "$script_dir/mac_address"
+fi
+container_mac=$(tr -d "\n\r\t " < "$script_dir/mac_address")
+
 # Start container
 f_echo "Now, the container is started (only terminal, no GUI) and the actual installation process begins."
-docker run --init -it --rm --name vivado_container --mac-address="02:42:ac:11:00:99" --mount type=bind,source="$script_dir/..",target="/home/user" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/install_vivado.sh
+docker run --init -it --rm --name vivado_container --mac-address="$container_mac" --mount type=bind,source="$script_dir/..",target="/home/user" -p 127.0.0.1:5901:5901 --platform linux/amd64 x64-linux sudo -H -u user bash /home/user/scripts/install_vivado.sh

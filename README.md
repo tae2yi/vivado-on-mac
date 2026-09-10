@@ -35,7 +35,7 @@ For anyone who just wants the environment running with minimal reading. Every st
 7. **Activate the free BASIC license** — Vivado 2026.1 refuses to open at all without this, so don't skip it:
    1. Launch Vivado (Desktop icon or Start Menu, inside the VNC session). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
    2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with the same AMD account from step 2.
-   3. AMD's site generates a free, node-locked BASIC license for this specific machine, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — this repo already pins it (`--mac-address` in `setup.sh`/`start_container.sh`) so it stays the same every time you restart the container.
+   3. AMD's site generates a free, node-locked BASIC license for this specific machine, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — `setup.sh` randomly generates one MAC address for your install on first run and pins it (`--mac-address` in `setup.sh`/`start_container.sh`), so it stays the same every time you restart the container, but is unique to your install rather than shared with everyone else using this repo.
    4. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. That's it — it's valid for 12 months, after which you repeat this same process to renew.
    5. Close the License Manager and launch Vivado again — it should now open normally.
 
@@ -74,11 +74,11 @@ Vivado 2026.1 requires activating a free, node-locked, annually-renewed **BASIC*
 
 1. Launch Vivado (Desktop icon or Start Menu). If no valid license is found, the **Vivado License Manager** opens automatically.
 2. Go to **Obtain License → Get My Full or Purchased Certificate-Based License → Connect Now**. This opens a real browser to AMD's licensing site — log in with the same AMD account. It generates a Node-locked BASIC license tied to this machine's **Host ID**.
-3. The Host ID is your container's pinned MAC address without colons. You can check it under **View Host Information** in the License Manager, or by running (inside the container):
+3. The Host ID is your container's pinned MAC address without colons. `setup.sh` generates this MAC randomly on first run and saves it to `scripts/mac_address` — it's unique per install, not a fixed value shared by everyone using this repo. You can check the live value under **View Host Information** in the License Manager, or by running (inside the container):
    ```
    .../Xilinx/<version>/Vivado/bin/unwrapped/lnx64.o/lmutil lmhostid
    ```
-   It should match the `--mac-address` baked into `setup.sh`/`start_container.sh` (`02:42:ac:11:00:99` → Host ID `0242ac110099`).
+   It should match `scripts/mac_address` on the host (colons removed).
 4. Once **View License Status** shows tier `BASIC` with a Host ID match, you're done. It's valid for 12 months; repeat this process to renew.
 
 **If "Connect Now" does nothing:** check that a real Firefox is installed (`firefox --version` inside the container). This repo's Dockerfile already fixes a common Ubuntu/Docker Firefox problem (see [Troubleshooting](#troubleshooting)) — this only matters if you rebuilt the image some other way.
@@ -118,7 +118,7 @@ The project this is based on supports Vivado 2021.1–2024.1. Getting 2026.1 wor
 - **`LD_PRELOAD` doesn't survive `sudo`.** The container needs `LD_PRELOAD` set (several libs) or Vivado crashes with `realloc(): invalid pointer`. The reference approach only exported it inside `de_start.sh`'s own process tree, so it worked for the auto-launched Vivado but not for Vivado launched later from a terminal or a `.desktop` icon in the same session. Fixed by having `install_vivado.sh` automatically patch every generated `.desktop` launcher that runs `bin/vivado`, baking `LD_PRELOAD` directly into its `Exec=` line right after installation finishes. (A global `/etc/ld.so.preload` was tried and reverted — it affects every process in the container, not just Vivado, and destabilized the desktop's own auto-launch.)
 - **`de_start.sh`'s auto-launch path assumed the old install layout.** 2024.1 installed to `Xilinx/Vivado/<version>/`; 2026.1 installs to `Xilinx/<version>/Vivado/` (a "unified" layout shared with Vitis and common `data`/`tps` folders). The glob in `de_start.sh` is updated accordingly.
 - **Installer's `installLibs.sh` needs extra packages Ubuntu 22.04 doesn't ship by default**, and license utilities (`lmutil`) need an LSB-compatible dynamic loader that doesn't exist on Ubuntu. Both are baked into the Dockerfile now.
-- **Container's virtual MAC address is pinned** (`--mac-address` on `docker run`) so the Vivado license Host ID (derived from the MAC) stays identical across container restarts — `--rm` containers otherwise don't guarantee a stable MAC on Docker's default bridge network.
+- **Container's virtual MAC address is pinned** (`--mac-address` on `docker run`) so the Vivado license Host ID (derived from the MAC) stays identical across container restarts — `--rm` containers otherwise don't guarantee a stable MAC on Docker's default bridge network. `setup.sh` generates this MAC randomly on first run and saves it to `scripts/mac_address` (gitignored), so every install gets its own unique Host ID instead of everyone who clones this repo sharing the same one — a shared, hardcoded Host ID across many different AMD accounts would look like abuse to AMD's licensing backend.
 
 This repo intentionally does **not** include any course-specific example projects, VS Code / Dev Container setup, or Verilog tooling — it's just the Vivado installation environment itself.
 
