@@ -32,7 +32,14 @@ For anyone who just wants the environment running with minimal reading. Every st
    caffeinate -dim zsh ./scripts/setup.sh
    ```
    and follow the yellow prompts — drag in the `.bin` file when asked, then log into your AMD account when the container asks for it.
-7. Once installed, launch Vivado and activate the free **BASIC license** (one-time-ish setup, see [below](#activating-the-free-basic-license)) — Vivado 2026.1 won't run without this step.
+7. **Activate the free BASIC license** — Vivado 2026.1 refuses to open at all without this, so don't skip it:
+   1. Launch Vivado (Desktop icon or Start Menu, inside the VNC session). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
+   2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with the same AMD account from step 2.
+   3. AMD's site generates a free, node-locked BASIC license for this specific machine, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — this repo already pins it (`--mac-address` in `setup.sh`/`start_container.sh`) so it stays the same every time you restart the container.
+   4. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. That's it — it's valid for 12 months, after which you repeat this same process to renew.
+   5. Close the License Manager and launch Vivado again — it should now open normally.
+
+   More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
 8. From then on, just run `./scripts/start_container.sh` to open Vivado.
 
 If anything above fails, jump to [Troubleshooting](#troubleshooting) or the detailed section for that step.
