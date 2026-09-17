@@ -4,6 +4,12 @@ Installs **Vivado 2026.1** on Apple Silicon Macs. It runs Vivado inside a Rosett
 
 It is in no way associated with Xilinx or AMD. Vivado and Xilinx are trademarks of Xilinx, Inc. / AMD.
 
+| Launching | Welcome screen | Synthesis → implementation → bitstream |
+|:---:|:---:|:---:|
+| ![Vivado 2026.1 starting inside the container](docs/images/vivado-launch.png) | ![Vivado 2026.1 welcome screen](docs/images/vivado-welcome.png) | ![Design Runs showing synth_design Complete and write_bitstream Complete](docs/images/vivado-bitstream.png) |
+
+Running on an Apple Silicon Mac, seen through Screen Sharing. The third shot is the one that matters: `synth_1` and `impl_1` both complete and a bitstream written, for a Spartan-7 `xc7s75fgga484-1` — so the full flow really does run here, not just the GUI.
+
 ## Table of contents
 
 - [How this works](#how-this-works)
@@ -67,8 +73,9 @@ For anyone who just wants the environment running with minimal reading. Every st
    1. Launch Vivado (Desktop icon or Start Menu, inside the VNC session). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
    2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with the same AMD account from step 2.
    3. AMD's site generates a free, node-locked BASIC license for this specific machine, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — `setup.sh` randomly generates one MAC address for your install on first run and pins it (`--mac-address` in `setup.sh`/`start_container.sh`), so it stays the same every time you restart the container, but is unique to your install rather than shared with everyone else using this repo.
-   4. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. That's it — it's valid for 12 months, after which you repeat this same process to renew.
-   5. Close the License Manager and launch Vivado again — it should now open normally.
+   4. AMD emails you the generated `.lic` file. Install it with **Load License → Copy License…**, or just drop it into the `.Xilinx` folder in this repo — that folder is the container's home directory, so Finder works fine for this.
+   5. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. That's it — it's valid for 12 months, after which you repeat this same process to renew.
+   6. Close the License Manager and launch Vivado again — it should now open normally.
 
    More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
 8. From then on, just double-click **`Start Vivado.command`** in the repo folder (or run `./scripts/start_container.sh`) to open Vivado.
@@ -105,14 +112,33 @@ If anything above fails, jump to [Troubleshooting](#troubleshooting) or the deta
 
 Vivado 2026.1 requires activating a free, node-locked, annually-renewed **BASIC** license — older `WebPACK`-style "no license file needed at all" licensing doesn't apply here. Do this inside the VNC session, after installation finishes:
 
-1. Launch Vivado (Desktop icon or Start Menu). If no valid license is found, the **Vivado License Manager** opens automatically.
-2. Go to **Obtain License → Get My Full or Purchased Certificate-Based License → Connect Now**. This opens a real browser to AMD's licensing site — log in with the same AMD account. It generates a Node-locked BASIC license tied to this machine's **Host ID**.
-3. The Host ID is your container's pinned MAC address without colons. `setup.sh` generates this MAC randomly on first run and saves it to `scripts/mac_address` — it's unique per install, not a fixed value shared by everyone using this repo. You can check the live value under **View Host Information** in the License Manager, or by running (inside the container):
-   ```
-   .../Xilinx/<version>/Vivado/bin/unwrapped/lnx64.o/lmutil lmhostid
-   ```
-   It should match `scripts/mac_address` on the host (colons removed).
-4. Once **View License Status** shows tier `BASIC` with a Host ID match, you're done. It's valid for 12 months; repeat this process to renew.
+**1. Open the License Manager.** Launching Vivado without a valid license opens it by itself. You can also reach it directly from the Start Menu under **Other → Manage Licenses 2026.1**, which is the easier route once Vivado is working normally.
+
+<img src="docs/images/license-menu.png" width="430">
+
+**2. Find your Host ID.** Under **View System Information → View Host Information**, the **Network Interface Card (NIC) ID** is the value AMD locks the license to. It's your container's pinned MAC address with the colons removed, so it should match `scripts/mac_address` on the Mac — `setup.sh` generates that randomly on first run, which is what keeps it both unique to your install and stable across restarts. The same value comes from `lmutil` inside the container:
+
+```
+.../Xilinx/<version>/Vivado/bin/unwrapped/lnx64.o/lmutil lmhostid
+```
+
+<img src="docs/images/license-host-id.png" width="480">
+
+**3. Request the license.** Go to **Obtain License → Get My Full or Purchased Certificate-Based License** and click **Connect Now**.
+
+<img src="docs/images/license-obtain.png" width="620">
+
+That opens a real browser inside the container, on AMD's product licensing site. Log in with the same AMD account, then fill in the **Name and Address Verification** form — US export regulations require it, and the form rejects PO boxes and non-Roman characters. Generate a node-locked BASIC license against the Host ID from the previous step, and AMD emails you the resulting `.lic` file.
+
+<img src="docs/images/license-connect.png" width="720">
+
+**4. Install the `.lic` file.** Either use **Load License → Copy License…** and pick the file, or put it into the `.Xilinx` folder yourself. That folder sits in this repo's directory and is the container's `$HOME/.Xilinx`, so you can drop the file in from Finder on the macOS side without going through the VNC session at all. Vivado picks up any valid node-locked `*.lic` it finds there.
+
+| Load License | …or place it in `.Xilinx` from macOS |
+|:---:|:---:|
+| <img src="docs/images/license-load.png" width="440"> | <img src="docs/images/license-file.png" width="440"> |
+
+**5. Confirm.** **View License Status** should now show tier `BASIC` against your Host ID. It's valid for 12 months; repeat this process to renew.
 
 **If "Connect Now" does nothing:** check that a real Firefox is installed (`firefox --version` inside the container). This repo's Dockerfile already fixes a common Ubuntu/Docker Firefox problem (see [Troubleshooting](#troubleshooting)) — this only matters if you rebuilt the image some other way.
 
