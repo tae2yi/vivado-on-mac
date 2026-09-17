@@ -12,8 +12,9 @@ export LD_PRELOAD="/lib/x86_64-linux-gnu/libudev.so.1 /lib/x86_64-linux-gnu/libs
 # if Vivado is installed
 if [ -d "/home/user/Xilinx" ]
 then
-	# Make Vivado connect to the xvcd server running on macOS
-	/home/user/Xilinx/*/Vivado/bin/hw_server -e "set auto-open-servers     xilinx-xvc:host.docker.internal:2542" &
+	# USB/IP: cable is attached directly to this container's USB bus,
+	# so hw_server searches for it locally instead of via xvcd/XVC.
+	/home/user/Xilinx/*/Vivado/bin/hw_server &
 	/home/user/Xilinx/*/Vivado/settings64.sh
 	/home/user/Xilinx/*/Vivado/bin/vivado
 else
