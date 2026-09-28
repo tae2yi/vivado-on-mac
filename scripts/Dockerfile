@@ -77,16 +77,17 @@ ENV LC_ALL=en_US.UTF-8
 # Without this, Vivado will crash when synthesizing
 ENV LD_PRELOAD="/lib/x86_64-linux-gnu/libudev.so.1 /lib/x86_64-linux-gnu/libselinux.so.1 /lib/x86_64-linux-gnu/libz.so.1 /lib/x86_64-linux-gnu/libgdk-x11-2.0.so.0"
 
-# JTAG cable forwarding: fxload loads Cypress FX2 firmware into an
-# unconfigured Xilinx Platform Cable, usbutils provides lsusb. The usbip
-# client can't come from apt - Ubuntu only ships it as
-# linux-tools-<version>-generic, tied to a kernel version this image's
-# LinuxKit kernel doesn't have a package for - so it's built from the kernel
-# source tree instead. Built into the image (not the bind-mounted folder)
-# since the container runs with --rm and would otherwise lose it on exit.
+# JTAG cable forwarding: usbutils provides lsusb. No fxload: hw_server loads
+# a Platform Cable's firmware itself. The usbip client can't come from apt -
+# Ubuntu only ships it as linux-tools-<version>-generic, tied to a kernel
+# version this image's LinuxKit kernel doesn't have a package for - so it's
+# built from the kernel source tree instead, pinned to the release matching
+# Docker Desktop's 6.12 kernel so the build doesn't change under us. Built
+# into the image (not the bind-mounted folder) since the container runs with
+# --rm and would otherwise lose it on exit.
 RUN apt-get install -y --no-install-recommends \
-    fxload usbutils autoconf automake libtool libudev-dev && \
-    git clone --depth 1 --filter=blob:none --sparse https://github.com/torvalds/linux.git /tmp/linux && \
+    usbutils autoconf automake libtool libudev-dev && \
+    git clone --depth 1 --branch v6.12 --filter=blob:none --sparse https://github.com/torvalds/linux.git /tmp/linux && \
     cd /tmp/linux && git sparse-checkout set tools/usb/usbip && \
     cd tools/usb/usbip && ./autogen.sh && ./configure && make && make install && \
     ldconfig && \

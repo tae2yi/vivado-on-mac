@@ -168,10 +168,10 @@ bind_device
 
 # macOS sets no configuration on a vendor-class device it has no driver for (an
 # unconfigured Platform Cable, 03fd:0013), so there are no interfaces to share.
-# Selecting configuration 1 is the standard request any OS sends on enumeration;
-# it changes nothing on the device that outlasts unplugging it.
+# Selecting the device's first configuration is the standard request any OS sends
+# on enumeration; it changes nothing on the device that outlasts unplugging it.
 if (( bind_status != 0 )) && [[ "$bind_output" == *"exposes no USB interfaces"* ]]; then
-    f_echo "macOS left $busid unconfigured; selecting configuration 1..."
+    f_echo "macOS left $busid unconfigured; selecting its USB configuration..."
     if ! "$usb_python" - "$vid" "${vidpid#*:}" <<'PY'
 import sys, usb1
 vid, pid = (int(x, 16) for x in sys.argv[1:3])
@@ -180,7 +180,9 @@ with usb1.USBContext() as ctx:
     if handle is None:
         sys.exit("cannot open the device")
     if handle.getConfiguration() == 0:
-        handle.setConfiguration(1)
+        # read from the descriptor rather than assumed to be 1, which it almost
+        # always is but doesn't have to be
+        handle.setConfiguration(handle.getDevice()[0].getConfigurationValue())
     handle.close()
 PY
     then
