@@ -1,0 +1,362 @@
+Fixes to usbipd-mac, applied by setup.sh on top of commit 1c2ab45 (the version it was
+tested against). Without them a Xilinx Platform Cable USB II attaches but cannot
+program an FPGA:
+
+- USBIPStreamFramer: TCP does not keep the client's write boundaries, and the Linux
+  usbip client sends the import request in two writes, so every import failed.
+  Messages are now reassembled from the stream before being processed.
+- ServerCoordinator: URBs ran on a concurrent queue, which reordered bulk OUT
+  transfers and cut FPGA programming short. Each endpoint now gets a serial queue,
+  and submits over the per-client limit are no longer dropped.
+
+diff --git a/Sources/USBIPDCore/Protocol/USBIPStreamFramer.swift b/Sources/USBIPDCore/Protocol/USBIPStreamFramer.swift
+new file mode 100644
+index 0000000..b89c97b
+--- /dev/null
++++ b/Sources/USBIPDCore/Protocol/USBIPStreamFramer.swift
+@@ -0,0 +1,72 @@
++// USBIPStreamFramer.swift
++// Splits a TCP byte stream into whole USB/IP messages
++
++import Foundation
++
++/// TCP delivers bytes, not messages. The Linux `usbip` client writes op_common and
++/// the import request's busid in two separate sends, so treating each receive as one
++/// message failed every import ("40 bytes required, 8 received", then the busid read
++/// as command 0x3100). This works out how long the next message is, so the caller can
++/// wait until it has all of it.
++public enum USBIPStreamFramer {
++    /// Size of the next complete message at the start of `buffer`, `nil` if more bytes
++    /// are needed to know or to have all of it, or `buffer.count` if the message is
++    /// unrecognisable — passing that to the processor surfaces its usual error.
++    public static func nextFrameLength(in buffer: Data, phase: USBIPConnectionState.Phase) -> Int? {
++        switch phase {
++        case .handshake:
++            return handshakeFrameLength(in: buffer)
++        case .attached:
++            return attachedFrameLength(in: buffer)
++        }
++    }
++
++    /// op_common is version(2) code(2) status(4); OP_REQ_IMPORT adds a 32-byte busid.
++    private static func handshakeFrameLength(in buffer: Data) -> Int? {
++        guard buffer.count >= 8 else { return nil }
++        let code = UInt16(buffer[buffer.startIndex + 2]) << 8 | UInt16(buffer[buffer.startIndex + 3])
++        let length: Int
++        switch USBIPProtocol.Command(rawValue: code) {
++        case .requestDeviceList:
++            length = 8
++        case .requestDeviceImport:
++            length = 8 + 32
++        default:
++            return buffer.count
++        }
++        return buffer.count >= length ? length : nil
++    }
++
++    /// Every CMD_ message has a 48-byte prefix. CMD_SUBMIT OUT carries
++    /// transfer_buffer_length bytes after it, and an isochronous submit is followed by
++    /// 16 bytes per packet descriptor.
++    private static func attachedFrameLength(in buffer: Data) -> Int? {
++        let prefixSize = 48
++        guard buffer.count >= prefixSize else { return nil }
++        var length = prefixSize
++        switch USBIPProtocol.BasicCommand(rawValue: bigEndianUInt32(in: buffer, at: 0)) {
++        case .submit:
++            let direction = bigEndianUInt32(in: buffer, at: 12)
++            let transferBufferLength = bigEndianUInt32(in: buffer, at: 24)
++            let numberOfPackets = bigEndianUInt32(in: buffer, at: 32)
++            if direction == 0 {  // USBIP_DIR_OUT
++                length += Int(transferBufferLength)
++            }
++            // Non-isochronous submits send 0 or 0xffffffff here.
++            if numberOfPackets != 0 && numberOfPackets != 0xFFFF_FFFF {
++                length += Int(numberOfPackets) * 16
++            }
++        case .unlink:
++            break
++        default:
++            return buffer.count
++        }
++        return buffer.count >= length ? length : nil
++    }
++
++    /// Byte by byte, so it neither assumes a zero startIndex nor an aligned address.
++    private static func bigEndianUInt32(in buffer: Data, at offset: Int) -> UInt32 {
++        let start = buffer.startIndex + offset
++        return buffer[start..<start + 4].reduce(0) { $0 << 8 | UInt32($1) }
++    }
++}
+diff --git a/Sources/USBIPDCore/ServerCoordinator.swift b/Sources/USBIPDCore/ServerCoordinator.swift
+index fbc1f28..012b3d9 100644
+--- a/Sources/USBIPDCore/ServerCoordinator.swift
++++ b/Sources/USBIPDCore/ServerCoordinator.swift
+@@ -421,78 +421,129 @@ public class ServerCoordinator: USBIPServer {
+             // usbip_header_basic, and nothing in the bytes says so.
+             let connectionState = USBIPConnectionState()
+             
++            // Bytes received but not yet a whole message. TCP does not preserve the
++            // client's write boundaries; see USBIPStreamFramer. Only touched from this
++            // connection's receive queue.
++            var pending = Data()
++
++            // One serial queue per endpoint and direction. A host controller runs each
++            // endpoint's URBs in submission order; running them on the concurrent queue
++            // reordered bulk OUTs and cut a Platform Cable USB II's FPGA programming
++            // short. Endpoints still run alongside each other, so a blocked IN read does
++            // not stall the rest. Only touched from this connection's receive queue.
++            var endpointQueues: [UInt64: DispatchQueue] = [:]
++
++            // Process one whole message and send its reply.
++            let respond: (Data) -> Void = { [weak self] data in
++                guard let self = self else { return }
++
++                do {
++                    // Process the request using the request processor
++                    let responseData = try self.requestProcessor.processRequest(
++                        data, connectionState: connectionState)
++
++                    // An empty response means the processor deliberately has nothing
++                    // to say — a request the client withdrew, which is answered by
++                    // its RET_UNLINK and must not also draw a RET_SUBMIT. Writing
++                    // zero bytes would be harmless but the intent is worth stating.
++                    if !responseData.isEmpty {
++                        // Send the response back to the client (this must be thread-safe)
++                        try connection.send(data: responseData)
++                    }
++
++                    // Once the socket carries an attached device it may go quiet
++                    // indefinitely, so exempt it from the idle reaper.
++                    if case .attached = connectionState.phase,
++                       let tcpConnection = connection as? TCPClientConnection {
++                        tcpConnection.keepAlive = true
++                    }
++
++                    self.logger.debug("Sent response to client", context: [
++                        "connectionId": connection.id.uuidString,
++                        "responseSize": responseData.count
++                    ])
++                } catch {
++                    self.logger.error("Failed to process request", context: [
++                        "connectionId": connection.id.uuidString,
++                        "error": error.localizedDescription
++                    ])
++
++                    // Forward error to server error handler
++                    self.onError?(error)
++
++                    // Close the connection on critical errors
++                    if case USBIPProtocolError.invalidHeader = error {
++                        self.logger.warning("Closing connection due to invalid header", context: [
++                            "connectionId": connection.id.uuidString
++                        ])
++                        try? connection.close()
++                    }
++                }
++            }
++
+             // Set up data handler for the connection with concurrent processing
+             connection.onDataReceived = { [weak self] data in
+                 guard let self = self else { return }
+-                
++
+                 self.logger.debug("Received data from client", context: [
+                     "connectionId": connection.id.uuidString,
+                     "dataSize": data.count
+                 ])
+-                
+-                // Check if this connection has reached its concurrent request limit
+-                let activeCount = self.activeRequests.getActiveRequestCount(for: connection.id)
+-                if activeCount >= self.maxConcurrentRequestsPerClient {
+-                    self.logger.warning("Client connection reached concurrent request limit", context: [
+-                        "connectionId": connection.id.uuidString,
+-                        "activeRequests": activeCount,
+-                        "limit": self.maxConcurrentRequestsPerClient
+-                    ])
+-                    // Could send error response or drop request
+-                    return
+-                }
+-                
+-                // Increment active request count
+-                self.activeRequests.incrementActiveRequests(for: connection.id)
+-                
+-                // Process request concurrently
+-                self.requestProcessingQueue.async {
+-                    defer {
+-                        // Always decrement active request count when done
+-                        self.activeRequests.decrementActiveRequests(for: connection.id)
++
++                pending.append(data)
++                while let length = USBIPStreamFramer.nextFrameLength(in: pending, phase: connectionState.phase) {
++                    // Copied so each message starts at index 0, as the decoders assume.
++                    let message = Data(pending.prefix(length))
++                    pending = Data(pending.dropFirst(length))
++
++                    // A successful import switches this socket's framing, so a handshake
++                    // message must be answered before the bytes after it are framed.
++                    if case .handshake = connectionState.phase {
++                        respond(message)
++                        continue
+                     }
+-                    
+-                    do {
+-                        // Process the request using the request processor
+-                        let responseData = try self.requestProcessor.processRequest(
+-                            data, connectionState: connectionState)
+-                        
+-                        // An empty response means the processor deliberately has nothing
+-                        // to say — a request the client withdrew, which is answered by
+-                        // its RET_UNLINK and must not also draw a RET_SUBMIT. Writing
+-                        // zero bytes would be harmless but the intent is worth stating.
+-                        if !responseData.isEmpty {
+-                            // Send the response back to the client (this must be thread-safe)
+-                            try connection.send(data: responseData)
+-                        }
+ 
+-                        // Once the socket carries an attached device it may go quiet
+-                        // indefinitely, so exempt it from the idle reaper.
+-                        if case .attached = connectionState.phase,
+-                           let tcpConnection = connection as? TCPClientConnection {
+-                            tcpConnection.keepAlive = true
+-                        }
+-                        
+-                        self.logger.debug("Sent response to client", context: [
+-                            "connectionId": connection.id.uuidString,
+-                            "responseSize": responseData.count
+-                        ])
+-                    } catch {
+-                        self.logger.error("Failed to process request", context: [
++                    // Check if this connection has reached its concurrent request limit
++                    let activeCount = self.activeRequests.getActiveRequestCount(for: connection.id)
++                    if activeCount >= self.maxConcurrentRequestsPerClient {
++                        self.logger.warning("Client connection reached concurrent request limit", context: [
+                             "connectionId": connection.id.uuidString,
+-                            "error": error.localizedDescription
++                            "activeRequests": activeCount,
++                            "limit": self.maxConcurrentRequestsPerClient
+                         ])
+-                        
+-                        // Forward error to server error handler
+-                        self.onError?(error)
+-                        
+-                        // Close the connection on critical errors
+-                        if case USBIPProtocolError.invalidHeader = error {
+-                            self.logger.warning("Closing connection due to invalid header", context: [
+-                                "connectionId": connection.id.uuidString
+-                            ])
+-                            try? connection.close()
++                        // Not dropped: a URB that gets no reply hangs the client, and with
++                        // per-endpoint ordering a backlog of queued submits is normal.
++                    }
++
++                    // Increment active request count
++                    self.activeRequests.incrementActiveRequests(for: connection.id)
++
++                    // CMD_SUBMIT runs in order on its endpoint's queue. CMD_UNLINK stays on
++                    // the concurrent queue: it has to reach a submit that is still running.
++                    let queue: DispatchQueue
++                    if message.prefix(4).elementsEqual([0, 0, 0, 1]) {
++                        // direction and ep, big-endian at offsets 12 and 16
++                        let key = message[12..<20].reduce(UInt64(0)) { $0 << 8 | UInt64($1) }
++                        if let existing = endpointQueues[key] {
++                            queue = existing
++                        } else {
++                            queue = DispatchQueue(
++                                label: "com.usbipd.endpoint",
++                                qos: DispatchQoS(qosClass: self.config.usbRequestQoS, relativePriority: 0),
++                                target: self.requestProcessingQueue)
++                            endpointQueues[key] = queue
++                        }
++                    } else {
++                        queue = self.requestProcessingQueue
++                    }
++
++                    // Process request concurrently
++                    queue.async {
++                        defer {
++                            // Always decrement active request count when done
++                            self.activeRequests.decrementActiveRequests(for: connection.id)
+                         }
++                        respond(message)
+                     }
+                 }
+             }
+diff --git a/Tests/USBIPDCoreTests/Protocol/USBIPStreamFramerTests.swift b/Tests/USBIPDCoreTests/Protocol/USBIPStreamFramerTests.swift
+new file mode 100644
+index 0000000..74edad6
+--- /dev/null
++++ b/Tests/USBIPDCoreTests/Protocol/USBIPStreamFramerTests.swift
+@@ -0,0 +1,73 @@
++import XCTest
++@testable import USBIPDCore
++
++final class USBIPStreamFramerTests: XCTestCase {
++    private func uint32(_ value: UInt32) -> [UInt8] {
++        [UInt8(value >> 24 & 0xFF), UInt8(value >> 16 & 0xFF), UInt8(value >> 8 & 0xFF), UInt8(value & 0xFF)]
++    }
++
++    /// op_common: version 0x0111, code, status 0.
++    private func opCommon(code: UInt16) -> [UInt8] {
++        [0x01, 0x11, UInt8(code >> 8), UInt8(code & 0xFF), 0, 0, 0, 0]
++    }
++
++    /// A 48-byte CMD_SUBMIT prefix.
++    private func submitPrefix(direction: UInt32, transferBufferLength: UInt32, numberOfPackets: UInt32 = 0) -> [UInt8] {
++        var bytes = uint32(1) + uint32(7) + uint32(0x0002_0001) + uint32(direction) + uint32(1)
++        bytes += uint32(0) + uint32(transferBufferLength) + uint32(0) + uint32(numberOfPackets) + uint32(0)
++        bytes += [UInt8](repeating: 0, count: 8)
++        return bytes
++    }
++
++    // The Linux client sends op_common and the busid in separate writes.
++    func testImportRequestWaitsForBusID() {
++        let header = Data(opCommon(code: 0x8003))
++        XCTAssertNil(USBIPStreamFramer.nextFrameLength(in: header, phase: .handshake))
++
++        let whole = header + Data("2-1".utf8) + Data(count: 29)
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: whole, phase: .handshake), 40)
++    }
++
++    func testDeviceListRequestIsHeaderOnly() {
++        let data = Data(opCommon(code: 0x8005)) + Data([0xAA])
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: data, phase: .handshake), 8)
++    }
++
++    func testUnknownHandshakeCommandIsPassedThroughWhole() {
++        let data = Data(opCommon(code: 0x1234)) + Data([1, 2, 3])
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: data, phase: .handshake), 11)
++    }
++
++    func testSubmitOutIncludesTransferBuffer() {
++        let prefix = Data(submitPrefix(direction: 0, transferBufferLength: 100))
++        XCTAssertNil(USBIPStreamFramer.nextFrameLength(in: prefix + Data(count: 99), phase: .attached(busID: "2-1")))
++        XCTAssertEqual(
++            USBIPStreamFramer.nextFrameLength(in: prefix + Data(count: 100 + 48), phase: .attached(busID: "2-1")),
++            148)
++    }
++
++    func testSubmitInHasNoPayload() {
++        let prefix = Data(submitPrefix(direction: 1, transferBufferLength: 512, numberOfPackets: 0xFFFF_FFFF))
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: prefix, phase: .attached(busID: "2-1")), 48)
++    }
++
++    func testIsochronousSubmitIncludesPacketDescriptors() {
++        let prefix = Data(submitPrefix(direction: 1, transferBufferLength: 512, numberOfPackets: 2))
++        XCTAssertNil(USBIPStreamFramer.nextFrameLength(in: prefix, phase: .attached(busID: "2-1")))
++        XCTAssertEqual(
++            USBIPStreamFramer.nextFrameLength(in: prefix + Data(count: 32), phase: .attached(busID: "2-1")),
++            80)
++    }
++
++    func testUnlinkIsFixedSize() {
++        let unlink = Data(uint32(2) + [UInt8](repeating: 0, count: 44))
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: unlink, phase: .attached(busID: "2-1")), 48)
++    }
++
++    // A buffer left over from earlier messages does not start at index 0.
++    func testSlicedBufferIsReadFromItsStartIndex() {
++        let bytes = Data([0xFF, 0xFF, 0xFF] + submitPrefix(direction: 0, transferBufferLength: 4) + [1, 2, 3, 4])
++        let slice = bytes.dropFirst(3)
++        XCTAssertEqual(USBIPStreamFramer.nextFrameLength(in: slice, phase: .attached(busID: "2-1")), 52)
++    }
++}

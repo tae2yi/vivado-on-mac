@@ -117,27 +117,8 @@ fi
 
 # Set up the host side of JTAG forwarding (USB/IP). Independent of the
 # Vivado installer, so do it before the long container build below.
-if ! which swift &> /dev/null
+if ! zsh "$script_dir/setup_usbipd.sh"
 then
-	f_echo "swift is required to build usbipd-mac (the USB/IP server used for JTAG forwarding)."
-	f_echo "Install the Xcode Command Line Tools with 'xcode-select --install' and run this script again."
-	exit 1
-fi
-
-if [ ! -d "$script_dir/../mac-tools/usbipd-mac" ]
-then
-	f_echo "Cloning usbipd-mac..."
-	if ! git clone https://github.com/beriberikix/usbipd-mac "$script_dir/../mac-tools/usbipd-mac"
-	then
-		f_echo "Error cloning usbipd-mac."
-		exit 1
-	fi
-fi
-
-f_echo "Building usbipd-mac..."
-if ! (cd "$script_dir/../mac-tools/usbipd-mac" && swift build -c release)
-then
-	f_echo "Error building usbipd-mac. Check the output above."
 	exit 1
 fi
 

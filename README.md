@@ -89,6 +89,7 @@ If anything above fails, jump to [Troubleshooting](#troubleshooting) or the deta
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/), the "Apple Chip" build
 - Rosetta (the installer prompts you to install it if it's missing)
 - Xcode Command Line Tools, for the `swift` compiler — `setup.sh` builds the USB/IP server used for JTAG forwarding from source. Install with `xcode-select --install` if `swift --version` fails.
+- [Homebrew](https://brew.sh)'s `libusb` (`brew install libusb`), which `jtag_connect.sh` uses to prepare a Xilinx Platform Cable USB II for forwarding
 - A free AMD account — needed both to download installer packages and to activate the free BASIC license
 - The Vivado **Web Installer** file, downloaded yourself from AMD's site — a single `.bin` file, *not* the multi-GB full offline installer. Put it inside this repo's folder once downloaded.
 
@@ -164,7 +165,9 @@ To use a JTAG cable, connect it separately with `Connect JTAG.command` — see b
 
 Doing nothing for those 5 seconds instead shuts the USB/IP daemon down and exits. That's the safe default if you hit the shortcut by accident, and it's also how you tidy up when you're finished — the daemon otherwise keeps running until you stop it or reboot.
 
-You can connect the cable while the container is already running; there's no need to restart it. The `sudo` prompt is `usbipd` needing privileged USB access on the macOS side.
+You can connect the cable while the container is already running; there's no need to restart it. No password is asked for: `usbipd` runs as your own user, since macOS lets it open a USB device no driver has claimed.
+
+Running it again when the cable is already attached does nothing, so it's safe to double-click whenever you're unsure.
 
 The window closes on its own 5 seconds after a successful connection. If something fails, it stays open with the reason until you press Enter, so an error can't disappear along with the window.
 
@@ -174,15 +177,19 @@ The script identifies the cable by vendor ID, so it works regardless of which po
 
 | Vendor ID | Cables | Handling after attach |
 |---|---|---|
-| `0x03fd` | Xilinx Platform Cable USB / USB II | Needs FX2 firmware, see below |
+| `0x03fd` | Xilinx Platform Cable USB / USB II | `hw_server` loads its firmware, see below |
 | `0x0403` | FTDI-based (Xilinx and Digilent) | Kernel's `ftdi_sio` driver is unbound automatically |
 | `0x1443` | Digilent | Permissions only |
 
 ### Xilinx Platform Cable USB II: two connections, not one
 
-This cable ships unconfigured, as `0x03fd:0x0013`, and can't do JTAG until Cypress FX2 firmware is loaded into it. The firmware ships inside the Vivado install, and `fxload` is built into the container image, so the script prints the exact command to run. Loading it makes the cable re-enumerate as `0x03fd:0x0008` — a different USB device as far as the system is concerned, which breaks the USB/IP attachment that was just made.
+Every time it's plugged in, this cable starts out without firmware, as `0x03fd:0x0013`. There's nothing to do by hand about that: Vivado's `hw_server` loads the firmware into the cable's RAM itself as soon as it sees the cable — right away if the Hardware Manager is connected, otherwise on **Open Target → Auto Connect** — exactly as it does on Windows or Linux. Nothing is written permanently; unplugging the cable clears it.
 
-So the first time you connect this cable after plugging it in, expect to run `Connect JTAG.command` **twice**: once to attach it, then again after running the `fxload` command to attach the now-configured cable. The script stays open and tells you this when it applies.
+Loading it makes the cable re-enumerate as `0x03fd:0x0008` — a different USB device as far as the system is concerned, which leaves the USB/IP attachment just made pointing at a device that no longer exists. So the first time you connect this cable after plugging it in, expect to run `Connect JTAG.command` **twice**: once to attach it, then again once the firmware is loaded, which clears the stale attachment and attaches the now-configured cable. The script stays open and tells you this when it applies.
+
+Two details the script takes care of: macOS leaves the firmware-less cable unconfigured, since no macOS driver matches it, so the script selects its USB configuration before sharing it; and `usbipd-mac` needs fixes before this cable can program an FPGA through it, which `setup_usbipd.sh` applies from `scripts/usbipd-mac.patch`.
+
+Don't unplug the cable, or run anything that restarts `usbipd`, while `hw_server` is talking to it. The cable's firmware is left mid-transfer and stops answering until it's unplugged. `jtag_connect.sh` stops `hw_server` first whenever it has to restart `usbipd` or drop an old attachment.
 
 ### What the script does that udev normally would
 
@@ -191,7 +198,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 - **Device permissions.** `hw_server` runs as uid 1000, not root, and a freshly attached device node is root-owned. Without a `chmod`, `lsusb` shows the cable while `hw_server` silently can't open it — a confusing failure worth knowing about if you ever connect a device by hand.
 - **Unbinding `ftdi_sio`** for FTDI cables, which the kernel otherwise claims as a serial port.
 
-> **Status:** the USB/IP path has been verified end to end in software — the kernel's `vhci_hcd` support, the protocol handshake between the macOS server and the Linux client, and live device visibility inside a running container. It has **not** yet been confirmed against a physical cable, so the firmware-loading step and `hw_server`'s recognition of the cable are still unproven. Reports welcome.
+> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board: the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`). FTDI and Digilent cables haven't been tried on hardware yet. Reports welcome.
 
 ## Troubleshooting
 
@@ -203,10 +210,14 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 | Vivado crashes immediately with `realloc(): invalid pointer` | Missing `LD_PRELOAD`, which the container needs set or Vivado dies on startup. Exporting it in a parent shell isn't enough, since it doesn't survive `sudo`; instead `install_vivado.sh` bakes it into the `Exec=` line of every generated `.desktop` launcher right after installation. So this normally only appears if you launch `bin/vivado` some other way — prefix that command with the same `LD_PRELOAD` (copy it from `scripts/de_start.sh`). |
 | `ERROR - The value specified for Edition (...) is invalid` during install | The catalog names in `install_configs/202610.txt` don't match what the installer expects. The error itself states the correct name — edit the file and rerun. |
 | Batch install complains about an invalid `Modules=` entry name | Same as above, but for a device/module name instead of the edition. Find the correct name in the installer's error and fix that specific entry (don't remove or reorder others). |
-| `Connect JTAG.command`: "usbipd is missing" | `setup.sh` hasn't been run, or its usbipd-mac build step failed. Rerun it. |
+| `Connect JTAG.command`: "usbipd is missing" | `setup.sh` hasn't been run, or its usbipd-mac build step failed. Run `zsh ./scripts/setup_usbipd.sh`, which does just that step. |
+| `Connect JTAG.command`: "usbipd was built without this repo's fixes" | Your install predates `scripts/usbipd-mac.patch`. Run `zsh ./scripts/setup_usbipd.sh` once; it applies the fixes and rebuilds. |
+| `setup_usbipd.sh`: "The libusb library is missing" | Run `brew install libusb`, then run it again. |
 | `Connect JTAG.command`: "No supported JTAG cable found" | The cable isn't attached, or its vendor ID isn't one of the three in [Supported cables](#supported-cables). The message lists every USB device macOS can see, so check whether yours appears at all. |
 | `Connect JTAG.command`: bind refused, naming a driver that owns the device | macOS has claimed the device and won't release it. This affects HID, mass storage, audio and camera class devices; releasing them needs a DriverKit entitlement Apple declined to grant usbipd-mac. Vendor-specific devices and FTDI/CP210x serial adapters are unaffected, so a JTAG cable normally isn't hit by this. |
-| Cable shows up in `lsusb` inside the container, but Vivado's Hardware Manager doesn't see it | If it's a `0x03fd` Platform Cable still reading as `:0x0013`, its firmware isn't loaded yet — see [Xilinx Platform Cable USB II](#xilinx-platform-cable-usb-ii-two-connections-not-one). Otherwise try restarting `hw_server` inside the container; it scans for cables when it starts. |
+| Cable shows up in `lsusb` inside the container, but Vivado's Hardware Manager doesn't see it | If it's a `0x03fd` Platform Cable still reading as `:0x0013`, its firmware isn't loaded yet: click **Open Target → Auto Connect**, then run `Connect JTAG.command` again — see [Xilinx Platform Cable USB II](#xilinx-platform-cable-usb-ii-two-connections-not-one). Otherwise try restarting `hw_server` inside the container; it scans for cables when it starts. |
+| The cable disappears from the Mac entirely (not even in the "Currently attached USB devices" list), though its status LED is on | macOS's accessory security locked the USB-C port after the cable was unplugged behind an adapter that stayed plugged in; it doesn't prompt again, because as far as it knows the adapter never left. Unplug the **adapter** from the Mac and plug it back in. |
+| Programming or scanning fails with timeouts, and the cable stops answering | The cable's firmware was interrupted mid-transfer, e.g. by unplugging it or restarting `usbipd` while `hw_server` was using it. Unplug the adapter from the Mac, plug it back in, and connect again from the start. |
 | Double-clicking `Start Vivado.command` does nothing, or macOS warns it's from an unidentified developer | Gatekeeper blocking a downloaded script the first time. Right-click the file → **Open** → confirm, or run `chmod +x "Start Vivado.command"` once from a terminal. A `git clone` normally doesn't trigger this; downloading the repo as a ZIP is more likely to. |
 
 ## Adapting to a different Vivado version or device
@@ -222,10 +233,12 @@ Supporting pieces you rarely touch directly: `header.sh` (shared shell functions
 The parts that carry this project's own behaviour:
 
 - `Start Vivado.command`, `Connect JTAG.command` — double-clickable Finder shortcuts for `start_container.sh` and `jtag_connect.sh`
-- `scripts/jtag_connect.sh` — finds the cable by vendor ID, binds it on the Mac, attaches it inside the container, and applies the fixups udev would normally handle
+- `scripts/jtag_connect.sh` — finds the cable by vendor ID, binds it on the Mac, replaces any stale attachment of it, attaches it inside the container, and applies the fixups udev would normally handle
 - `scripts/start_container.sh` — no longer runs `xvcd`; the container now gets `--privileged` and `/dev/bus/usb` so it can see a USB/IP-attached cable, including one attached after it started
 - `scripts/de_start.sh` — `hw_server` searches the local USB bus instead of connecting to an XVC server on the Mac
-- `scripts/setup.sh` — additionally clones and builds usbipd-mac into `mac-tools/` (gitignored)
+- `scripts/setup.sh` — additionally runs `setup_usbipd.sh`
+- `scripts/setup_usbipd.sh` — clones usbipd-mac into `mac-tools/` (gitignored), applies `usbipd-mac.patch` to it and builds it, and sets up the python environment with `libusb1` that `jtag_connect.sh` uses. Can be run on its own
+- `scripts/usbipd-mac.patch` — fixes usbipd-mac needs before a Platform Cable can program an FPGA through it; the top of the file explains each one
 - `scripts/Dockerfile` — installs `fxload` and `usbutils`, and builds the `usbip` client from the kernel source tree. That build exists because Ubuntu has no standalone `usbip` package: it ships the binary only inside `linux-tools-<version>-generic`, pinned to a kernel version that Docker Desktop's LinuxKit kernel has no package for. Also carries a real Firefox from Mozilla's apt repo, the extra libraries Vivado's `installLibs.sh` expects, and an LSB-compatible loader symlink that `lmutil` needs
 - `scripts/mac_address` — the container's pinned MAC, randomly generated on first run and gitignored; see [Licensing that survives a restart](#licensing-that-survives-a-restart)
 - `install_configs/202610.txt` — 2026.1 batch config
@@ -236,7 +249,7 @@ The repository's contents are licensed under the **Creative Commons Zero v1.0 Un
 
 Running these scripts means you agree to Xilinx'/AMD's and third-party EULAs (obtainable by extracting the installer yourself) and to [Apple's software license agreement](https://www.apple.com/legal/sla/) for Rosetta 2.
 
-This repository vendors no third-party code. Two external components are fetched and built during setup, under their own licenses: [usbipd-mac](https://github.com/beriberikix/usbipd-mac) by Jonathan Beri (MIT), cloned into `mac-tools/` by `setup.sh`, and the USB/IP userspace utilities from the Linux kernel source tree (`tools/usb/usbip`, GPL v2), built into the Docker image.
+This repository vendors no third-party code, apart from `scripts/usbipd-mac.patch`, a set of modifications to usbipd-mac that is covered by that project's MIT license. Two external components are fetched and built during setup, under their own licenses: [usbipd-mac](https://github.com/beriberikix/usbipd-mac) by Jonathan Beri (MIT), cloned into `mac-tools/` and patched by `setup_usbipd.sh`, and the USB/IP userspace utilities from the Linux kernel source tree (`tools/usb/usbip`, GPL v2), built into the Docker image.
 
 Vivado and Xilinx are trademarks of Xilinx, Inc. Arm is a registered trademark of Arm Limited. Apple, Mac, macOS and Rosetta are trademarks of Apple Inc. Docker and the Docker logo are trademarks of Docker, Inc. Linux® is the registered trademark of Linus Torvalds.
 
