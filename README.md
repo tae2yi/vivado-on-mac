@@ -10,6 +10,12 @@ It is in no way associated with Xilinx or AMD. Vivado and Xilinx are trademarks 
 
 Running on an Apple Silicon Mac, seen through Screen Sharing. The third shot is the one that matters: `synth_1` and `impl_1` both complete and a bitstream written, for a Spartan-7 `xc7s75fgga484-1` — so the full flow really does run here, not just the GUI.
 
+| The bench | Hardware Manager sees the FPGA | Programming over JTAG |
+|:---:|:---:|:---:|
+| ![A MacBook connected through a USB-C adapter and a Xilinx Platform Cable USB II to an HBE-Combo II-DLD board](docs/images/jtag-board-setup.jpg) | ![Vivado Hardware Manager showing localhost Connected, the Platform Cable target Open and xc7s75_0 Programmed](docs/images/jtag-hardware-manager.png) | ![Program Device dialog part way through writing a bitstream to xc7s75_0](docs/images/jtag-programming.png) |
+
+And it reaches real hardware: a Xilinx Platform Cable USB II plugged into the Mac, forwarded into the container over USB/IP, with Vivado's Hardware Manager detecting the Spartan-7 and programming it.
+
 ## Table of contents
 
 - [How this works](#how-this-works)
@@ -79,7 +85,7 @@ For anyone who just wants the environment running with minimal reading. Every st
 
    More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
 8. From then on, just double-click **`Start Vivado.command`** in the repo folder (or run `./scripts/start_container.sh`) to open Vivado.
-9. To use a JTAG cable, plug it in and double-click **`Connect JTAG.command`**, pressing Enter within 5 seconds. See [Connecting a JTAG cable](#connecting-a-jtag-cable).
+9. To use a JTAG cable, plug it in and double-click **`Connect JTAG.command`**, pressing Enter within 5 seconds. Wait for its green **READY** box, then click **Open Target → Auto Connect** in Vivado. See [Connecting a JTAG cable](#connecting-a-jtag-cable).
 
 If anything above fails, jump to [Troubleshooting](#troubleshooting) or the detailed section for that step.
 
@@ -163,14 +169,31 @@ To use a JTAG cable, connect it separately with `Connect JTAG.command` — see b
 1. Start the container with `Start Vivado.command`.
 2. Plug in the cable.
 3. Double-click **`Connect JTAG.command`** and **press Enter within 5 seconds**.
+4. **Wait for the green `✔ READY` box.** With a Xilinx Platform Cable that was just plugged in this takes about 40 seconds, because its firmware has to be loaded first; the script does that by itself and shows a yellow `⚠ NOT READY YET` box meanwhile.
+5. Only then, in Vivado's Hardware Manager, click **Open Target → Auto Connect**.
+
+<img src="docs/images/jtag-connect-terminal.svg" width="720" alt="Connect JTAG.command output for a freshly plugged-in Platform Cable: attach as 03fd:0013, a yellow NOT READY YET box while the firmware loads, re-attach as 03fd:0008, then a green READY box">
+
+That is the output of a real run with a freshly plugged-in Platform Cable USB II, 41 seconds from Enter to READY. One run is enough. Don't click Auto Connect before the READY box: that is what produces Vivado's misleading `Cannot support out-of-date hw_server` error, see [Troubleshooting](#troubleshooting).
 
 Doing nothing for those 5 seconds instead shuts the USB/IP daemon down and exits. That's the safe default if you hit the shortcut by accident, and it's also how you tidy up when you're finished — the daemon otherwise keeps running until you stop it or reboot.
 
 You can connect the cable while the container is already running; there's no need to restart it. No password is asked for: `usbipd` runs as your own user, since macOS lets it open a USB device no driver has claimed.
 
-Running it again when the cable is already attached does nothing, so it's safe to double-click whenever you're unsure.
+Running it again when the cable is already attached does nothing (`✔ ALREADY CONNECTED`), so it's safe to double-click whenever you're unsure.
 
-The window closes on its own 5 seconds after a successful connection. If something fails, it stays open with the reason until you press Enter, so an error can't disappear along with the window.
+Every line the script prints starts with a symbol that says what kind of line it is:
+
+| Symbol | Colour | Meaning |
+|:---:|---|---|
+| `▶` | cyan | a step is in progress |
+| `✔` | green | that step is done |
+| `⚠` | yellow | heads-up; in a box, "wait, not ready yet" |
+| `✖` | red | it failed; the box says what to do next |
+
+The window closes on its own 5 seconds after a successful connection. If something fails, it stays open with the reason and the next thing to try until you press Enter, so an error can't disappear along with the window. This is what a failure looks like, here with no cable plugged in:
+
+<img src="docs/images/jtag-connect-no-cable.svg" width="720" alt="Connect JTAG.command output when no JTAG cable is plugged in: a red FAILED box listing what to do">
 
 ### Supported cables
 
@@ -182,15 +205,34 @@ The script identifies the cable by vendor ID, so it works regardless of which po
 | `0x0403` | FTDI-based (Xilinx and Digilent) | Kernel's `ftdi_sio` driver is unbound automatically |
 | `0x1443` | Digilent | Permissions only |
 
-### Xilinx Platform Cable USB II: two connections, not one
+### Xilinx Platform Cable USB II: the firmware load
 
-Every time it's plugged in, this cable starts out without firmware, as `0x03fd:0x0013`. There's nothing to do by hand about that: Vivado's `hw_server` loads the firmware into the cable's RAM itself as soon as it sees the cable — right away if the Hardware Manager is connected, otherwise on **Open Target → Auto Connect** — exactly as it does on Windows or Linux. Nothing is written permanently; unplugging the cable clears it.
+Every time it's plugged in, this cable starts out without firmware, as `0x03fd:0x0013`. Xilinx's `hw_server` loads the firmware into the cable's RAM as soon as it sees the cable, exactly as it does on Windows or Linux. Nothing is written permanently; unplugging the cable clears it.
 
-Loading it makes the cable re-enumerate as `0x03fd:0x0008` — a different USB device as far as the system is concerned, which leaves the USB/IP attachment just made pointing at a device that no longer exists. So the first time you connect this cable after plugging it in, expect to run `Connect JTAG.command` **twice**: once to attach it, then again once the firmware is loaded, which clears the stale attachment and attaches the now-configured cable. The script stays open and tells you this when it applies.
+Loading it makes the cable re-enumerate as `0x03fd:0x0008` — a different USB device as far as the system is concerned, which leaves the USB/IP attachment just made pointing at a device that no longer exists. So connecting this cable really takes four steps, and `Connect JTAG.command` does all of them in one run:
 
-Two details the script takes care of: macOS leaves the firmware-less cable unconfigured, since no macOS driver matches it, so the script selects its USB configuration before sharing it; and `usbipd-mac` needs fixes before this cable can program an FPGA through it, which `setup_usbipd.sh` applies from `scripts/usbipd-mac.patch`.
+1. attach the firmware-less `0013` cable to the container;
+2. start `hw_server` there and ask it for its JTAG targets, which makes it load the firmware. The asking matters: `hw_server` started on its own never scans for cables and leaves this one at `0013` indefinitely, so the script connects `xsdb` to it once as a client;
+3. wait for the cable to come back as `0008` and **stay** there, then stop `hw_server`, drop the dead `0013` attachment and attach the `0008` cable;
+4. start `hw_server` again, so Vivado's Auto Connect joins a server that already sees the cable.
+
+Step 3 waits for `0008` to hold for 8 seconds rather than acting on the first sighting: during the load the cable re-enumerates twice, a few seconds apart, and shows up as `0008` in between.
+
+Two more details the script takes care of: macOS leaves the firmware-less cable unconfigured, since no macOS driver matches it, so the script selects its USB configuration before sharing it; and `usbipd-mac` needs fixes before this cable can program an FPGA through it, which `setup_usbipd.sh` applies from `scripts/usbipd-mac.patch`.
 
 Don't unplug the cable, or run anything that restarts `usbipd`, while `hw_server` is talking to it. The cable's firmware is left mid-transfer and stops answering until it's unplugged. `jtag_connect.sh` stops `hw_server` first whenever it has to restart `usbipd` or drop an old attachment.
+
+#### Why not just click Auto Connect and let Vivado load the firmware?
+
+Because of the stale attachment. If Vivado's own Auto Connect starts while the cable is still `0013`, the `hw_server` it launches loads the firmware and is then left holding a dead device, and the connect hangs for 30–40 seconds. What Vivado reports next depends on what happens to that `hw_server`, checked by running the same Tcl commands Auto Connect uses (`connect_hw_server`, `open_hw_target`) in batch mode:
+
+| Cable when the connect starts | `hw_server` during the connect | Result |
+|---|---|---|
+| `0013` | stopped, to re-attach the cable | hangs 29 s, then **`[Xicom 50-198] Cannot support out-of-date hw_server`** and `[Labtools 27-3461]` |
+| `0013` | left alone | hangs 41 s, then `[Labtoolstcl 44-494]` (no target) |
+| `0008` | killed at various moments, frozen, restarted behind Vivado's back | `[Labtools 27-3733]`, `27-2220`, `44-513` or success; never `50-198` |
+
+The two `0013` rows were each run once (they need the cable replugged), the `0008` row about 25 times. So "out-of-date hw_server" has nothing to do with versions: it means Auto Connect was started on a cable whose firmware wasn't loaded yet. Wait for the READY box and click Auto Connect again.
 
 ### What the script does that udev normally would
 
@@ -199,7 +241,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 - **Device permissions.** `hw_server` runs as uid 1000, not root, and a freshly attached device node is root-owned. Without a `chmod`, `lsusb` shows the cable while `hw_server` silently can't open it — a confusing failure worth knowing about if you ever connect a device by hand.
 - **Unbinding `ftdi_sio`** for FTDI cables, which the kernel otherwise claims as a serial port.
 
-> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board: the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`). FTDI and Digilent cables haven't been tried on hardware yet. Reports welcome.
+> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board (HBE-Combo II-DLD): the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`) — see the screenshots at the top — and `Connect JTAG.command` taking a freshly plugged-in cable to READY in a single run. FTDI and Digilent cables haven't been tried on hardware yet. Reports welcome.
 
 ## Troubleshooting
 
@@ -214,10 +256,12 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 | `Connect JTAG.command`: "usbipd is missing" | `setup.sh` hasn't been run, or its usbipd-mac build step failed. Run `zsh ./scripts/setup_usbipd.sh`, which does just that step. |
 | `Connect JTAG.command`: "usbipd was built without this repo's fixes" | Your install predates `scripts/usbipd-mac.patch`. Run `zsh ./scripts/setup_usbipd.sh` once; it applies the fixes and rebuilds. |
 | `setup_usbipd.sh`: "The libusb library is missing" | Run `brew install libusb`, then run it again. |
-| `Connect JTAG.command`: "No supported JTAG cable found" | The cable isn't attached, or its vendor ID isn't one of the three in [Supported cables](#supported-cables). The message lists every USB device macOS can see, so check whether yours appears at all. |
+| `Connect JTAG.command`: "No JTAG cable found" | The cable isn't attached, or its vendor ID isn't one of the three in [Supported cables](#supported-cables). The message lists every USB device macOS can see, so check whether yours appears at all. |
+| Vivado: `[Xicom 50-198] Cannot support out-of-date hw_server` / `[Labtools 27-3461] Cannot support an older version of hw_server` on Auto Connect | Not a version problem. Auto Connect was clicked while the Platform Cable's firmware wasn't loaded yet (`0x0013`). Dismiss the error, wait for the green READY box from `Connect JTAG.command` (run it again if its window is gone), then click Auto Connect again. Details: [the firmware load](#xilinx-platform-cable-usb-ii-the-firmware-load). |
+| `Connect JTAG.command`: "The cable did not finish loading its firmware" | The cable never settled as `0x0008` within 90 seconds. Run it again; if that fails too, unplug the USB-C adapter from the Mac, plug it back in and run it once more. |
 | `Connect JTAG.command`: bind refused, naming a driver that owns the device | macOS has claimed the device and won't release it. This affects HID, mass storage, audio and camera class devices; releasing them needs a DriverKit entitlement Apple declined to grant usbipd-mac. Vendor-specific devices and FTDI/CP210x serial adapters are unaffected, so a JTAG cable normally isn't hit by this. |
-| Cable shows up in `lsusb` inside the container, but Vivado's Hardware Manager doesn't see it | If it's a `0x03fd` Platform Cable still reading as `:0x0013`, its firmware isn't loaded yet: click **Open Target → Auto Connect**, then run `Connect JTAG.command` again — see [Xilinx Platform Cable USB II](#xilinx-platform-cable-usb-ii-two-connections-not-one). Otherwise try restarting `hw_server` inside the container; it scans for cables when it starts. |
-| The cable disappears from the Mac entirely (not even in the "Currently attached USB devices" list), though its status LED is on | macOS's accessory security locked the USB-C port after the cable was unplugged behind an adapter that stayed plugged in; it doesn't prompt again, because as far as it knows the adapter never left. Unplug the **adapter** from the Mac and plug it back in. |
+| Cable shows up in `lsusb` inside the container, but Vivado's Hardware Manager doesn't see it | Compare what each side sees. If the Mac lists the cable as `03fd:0008` but the container still shows `03fd:0013`, the container is holding a dead attachment from before the firmware load: run `Connect JTAG.command` again and wait for READY — see [the firmware load](#xilinx-platform-cable-usb-ii-the-firmware-load). Otherwise restart `hw_server` inside the container; it scans for cables when it starts. |
+| The cable disappears from the Mac entirely (not even in the "USB devices this Mac sees" list), though its status LED is on | macOS's accessory security locked the USB-C port after the cable was unplugged behind an adapter that stayed plugged in; it doesn't prompt again, because as far as it knows the adapter never left. Unplug the **adapter** from the Mac and plug it back in. |
 | Programming or scanning fails with timeouts, and the cable stops answering | The cable's firmware was interrupted mid-transfer, e.g. by unplugging it or restarting `usbipd` while `hw_server` was using it. Unplug the adapter from the Mac, plug it back in, and connect again from the start. |
 | Double-clicking `Start Vivado.command` does nothing, or macOS warns it's from an unidentified developer | Gatekeeper blocking a downloaded script the first time. Right-click the file → **Open** → confirm, or run `chmod +x "Start Vivado.command"` once from a terminal. A `git clone` normally doesn't trigger this; downloading the repo as a ZIP is more likely to. |
 
@@ -234,7 +278,7 @@ Supporting pieces you rarely touch directly: `header.sh` (shared shell functions
 The parts that carry this project's own behaviour:
 
 - `Start Vivado.command`, `Connect JTAG.command` — double-clickable Finder shortcuts for `start_container.sh` and `jtag_connect.sh`
-- `scripts/jtag_connect.sh` — finds the cable by vendor ID, binds it on the Mac, replaces any stale attachment of it, attaches it inside the container, and applies the fixups udev would normally handle
+- `scripts/jtag_connect.sh` — finds the cable by vendor ID, binds it on the Mac, replaces any stale attachment of it, attaches it inside the container, and applies the fixups udev would normally handle. For a Platform Cable it also starts `hw_server` and prompts it to load the firmware, waits for the cable to re-enumerate, re-attaches it and leaves `hw_server` running for Vivado to join
 - `scripts/start_container.sh` — no longer runs `xvcd`; the container now gets `--privileged` and `/dev/bus/usb` so it can see a USB/IP-attached cable, including one attached after it started
 - `scripts/de_start.sh` — `hw_server` searches the local USB bus instead of connecting to an XVC server on the Mac
 - `scripts/setup.sh` — additionally runs `setup_usbipd.sh`
