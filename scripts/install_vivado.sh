@@ -11,6 +11,13 @@ install_bin_path=$(tr -d "\n\r\t " < "/home/user/scripts/install_bin")
 
 vivado_version="202610"
 
+f_echo "Choosing modules to install..."
+if ! bash "/home/user/scripts/select_modules.sh" "/home/user/scripts/install_configs/${vivado_version}.txt" "/home/user/scripts/install_configs/${vivado_version}.selected.txt"
+then
+	f_echo "Module selection failed."
+	exit 1
+fi
+
 f_echo "Extracting installer"
 eval "$install_bin_path --target /home/user/installer --noexec"
 
@@ -32,7 +39,7 @@ if [ "$vivado_version" = "202110" ]; then
     wait_for_user_input
 fi
 
-if /home/user/installer/xsetup -c "/home/user/scripts/install_configs/${vivado_version}.txt" -b Install -a "${eula_args}"
+if /home/user/installer/xsetup -c "/home/user/scripts/install_configs/${vivado_version}.selected.txt" -b Install -a "${eula_args}"
 then
     f_echo "Vivado was successfully installed."
 

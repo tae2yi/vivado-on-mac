@@ -8,6 +8,7 @@ Desktop/
 installer/
 scripts/install_bin
 scripts/mac_address
+scripts/install_configs/*.selected.txt
 mac-tools/
 
 .cache/

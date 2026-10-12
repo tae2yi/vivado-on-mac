@@ -68,7 +68,7 @@ For anyone who just wants the environment running with minimal reading. Every st
    ```
    caffeinate -dim zsh ./scripts/setup.sh
    ```
-   and follow the yellow prompts — drag in the `.bin` file when asked, then log into your AMD account when the container asks for it.
+   and follow the yellow prompts — drag in the `.bin` file when asked, type the numbers of the devices you want installed (only your board's chip, e.g. `Spartan-7 FPGAs`), then log into your AMD account when the container asks for it.
 7. **Activate the free BASIC license** — Vivado 2026.1 refuses to open at all without this, so don't skip it:
    1. Launch Vivado (Desktop icon or Start Menu, inside the VNC session). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
    2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with the same AMD account from step 2.
@@ -102,8 +102,9 @@ If anything above fails, jump to [Troubleshooting](#troubleshooting) or the deta
    caffeinate -dim zsh ./scripts/setup.sh
    ```
 4. When asked to drag and drop the installation binary, drag in the `.bin` file itself.
-5. The container builds, then prompts you to log into your AMD account. This step downloads the selected packages — it's separate from license activation, which happens later.
-6. Batch installation proceeds using `scripts/install_configs/202610.txt` (preselected for Spartan-7, Artix-7, Zynq-7000, and DocNav). If you want different devices, or a future Vivado version renames its catalog, you may see:
+5. The container builds, then shows a numbered list of every device family and tool the installer offers. **Nothing is preselected** — type the numbers of only what you need, separated by spaces (for example the number next to `Spartan-7 FPGAs`), and confirm. Vivado itself and Vitis HLS are always installed, because AMD's installer bundles them and offers no way to turn them off; everything else is installed only if you pick it. Each extra family adds disk space, so choose only the chip on your board.
+6. You are then prompted to log into your AMD account. This step downloads the selected packages — it's separate from license activation, which happens later.
+7. Batch installation proceeds using the selection you just made, written to `scripts/install_configs/202610.selected.txt` (generated from the `202610.txt` catalog, and gitignored). If a future Vivado version renames its catalog, you may see:
    ```
    ERROR - The value specified for Edition (...) is invalid. Valid edition names are "...".
    ```
@@ -223,7 +224,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 ## Adapting to a different Vivado version or device
 
 - `scripts/setup.sh` and `scripts/install_vivado.sh` hardcode the version string (currently `2026.1` / `202610`) rather than using the original hash-based auto-detection in `scripts/hashes.sh` (unmaintained past 2024.1). Update both if you use a different version.
-- `scripts/install_configs/202610.txt`'s `Modules=` line is a full, ordered list of every catalog entry with `:0`/`:1` flags. To select different devices, find the exact family name from the installer's own error message (see [Installation](#installation) step 6) and flip its flag to `:1`. Don't remove or reorder entries.
+- `scripts/install_configs/202610.txt`'s `Modules=` line is a full, ordered list of every catalog entry, all flagged `:0`. `scripts/select_modules.sh` reads that list at install time, shows the family and tool names (the entries that start with a capital letter; the lowercase entries such as `xc7a100t` are individual devices and stay off) as a menu, and writes your choice to `202610.selected.txt`. You don't edit flags by hand. For a different version, copy that version's catalog into a new `<version>.txt` with every flag at `:0` and update the version string in `install_vivado.sh`. If the installer rejects a name, take the correct one from its error message (see [Installation](#installation) step 7) and fix only that entry. Don't remove or reorder entries.
 - Expect the catalog to be renamed between releases rather than merely extended. 2026.1 changed the `Edition` name to `Vivado Design Suite` (from `Vivado ML Standard`) and renamed device families, e.g. `Spartan-7` → `Spartan-7 FPGAs`, so a config from an older version won't carry over untouched.
 
 ## Files overview
@@ -241,7 +242,8 @@ The parts that carry this project's own behaviour:
 - `scripts/usbipd-mac.patch` — fixes usbipd-mac needs before a Platform Cable can program an FPGA through it; the top of the file explains each one
 - `scripts/Dockerfile` — installs `usbutils`, and builds the `usbip` client from the kernel source tree, pinned to the `v6.12` release that matches Docker Desktop's kernel. That build exists because Ubuntu has no standalone `usbip` package: it ships the binary only inside `linux-tools-<version>-generic`, pinned to a kernel version that Docker Desktop's LinuxKit kernel has no package for. Also carries a real Firefox from Mozilla's apt repo, the extra libraries Vivado's `installLibs.sh` expects, and an LSB-compatible loader symlink that `lmutil` needs
 - `scripts/mac_address` — the container's pinned MAC, randomly generated on first run and gitignored; see [Licensing that survives a restart](#licensing-that-survives-a-restart)
-- `install_configs/202610.txt` — 2026.1 batch config
+- `scripts/select_modules.sh` — asks which device families and tools to install and writes the batch config the installer uses, so only what you choose (plus the bundled Vivado and Vitis HLS) is downloaded
+- `install_configs/202610.txt` — 2026.1 install catalog (all entries off; `select_modules.sh` turns on your choices in a generated `202610.selected.txt`)
 
 ## License, copyright and trademark information
 
