@@ -68,6 +68,15 @@ For anyone who just wants the environment running with minimal reading. Every st
 1. **Install Docker Desktop** ("Apple Chip" build) and let it install Rosetta if it asks.
 2. **Create a free AMD account** at amd.com, if you don't have one.
 3. **Download the Vivado 2026.1 Web Installer** from AMD's site — look for a file named like `FPGAs_AdaptiveSoCs_Unified_SDI_2026.1_..._Lin64.bin`, roughly a few hundred MB. Don't download the multi-gigabyte full offline installer.
+   1. Open AMD's [Adaptive SoCs & FPGA Design Tools Downloads - 2026.1](https://www.amd.com/en/support/downloads/adaptive-socs-and-fpgas/development-tools/2026-1.html) page. If the link has moved, search Google for `Adaptive SoCs & FPGA Design Tools Downloads - 2026.1`. Make sure **Version** is set to `2026.1`.
+
+      <img src="docs/images/download-version.png" width="620">
+
+   2. Under **AMD Unified Installer**, expand **Unified Installer for FPGA & Adaptive SoC Tools – 2026.1** (not the `Update 1 – 2026.1.1` entry below it) and click **Linux Self Extracting Web Installer** — the `BIN` file of a few hundred MB. Skip the Windows `EXE` above it and the `SFD` (TAR/GZIP, about 98 GB) below it.
+
+      <img src="docs/images/download-linux-installer.png" width="620">
+
+   3. AMD asks you to sign in and fill in a short export-compliance form before the download starts.
 4. **Clone this repo somewhere with no spaces in the path**, e.g. `~/Documents/vivado-on-silicon-mac-2026` (not `~/Library/Application Support/...`).
 5. Move the downloaded `.bin` file into the cloned folder.
 6. Run:
@@ -97,7 +106,7 @@ If anything above fails, jump to [Troubleshooting](#troubleshooting) or the deta
 - Xcode Command Line Tools, for the `swift` compiler — `setup.sh` builds the USB/IP server used for JTAG forwarding from source. Install with `xcode-select --install` if `swift --version` fails.
 - [Homebrew](https://brew.sh)'s `libusb` (`brew install libusb`), which `jtag_connect.sh` uses to prepare a Xilinx Platform Cable USB II for forwarding
 - A free AMD account — needed both to download installer packages and to activate the free BASIC license
-- The Vivado **Web Installer** file, downloaded yourself from AMD's site — a single `.bin` file, *not* the multi-GB full offline installer. Put it inside this repo's folder once downloaded.
+- The Vivado **Web Installer** file, downloaded yourself from AMD's site — a single `.bin` file, *not* the multi-GB full offline installer. Put it inside this repo's folder once downloaded. [Quick start](#quick-start) step 3 shows where it is on the download page.
 
 ## Installation
 
