@@ -10,18 +10,16 @@ validate_macos
 
 if ! which swift &> /dev/null
 then
-	f_echo "swift is required to build usbipd-mac (the USB/IP server used for JTAG forwarding)."
-	f_echo "Install the Xcode Command Line Tools with 'xcode-select --install' and run this script again."
-	exit 1
+	f_fail "Xcode Command Line Tools are missing (needed to build the JTAG forwarding server)." \
+		"Run: xcode-select --install   — then run setup.sh again."
 fi
 
 if [ ! -d "$script_dir/../mac-tools/usbipd-mac" ]
 then
-	f_echo "Cloning usbipd-mac..."
-	if ! git clone https://github.com/beriberikix/usbipd-mac "$script_dir/../mac-tools/usbipd-mac"
+	f_step "Downloading usbipd-mac (the USB/IP server)..."
+	if ! git clone -q https://github.com/beriberikix/usbipd-mac "$script_dir/../mac-tools/usbipd-mac"
 	then
-		f_echo "Error cloning usbipd-mac."
-		exit 1
+		f_fail "Could not download usbipd-mac. Check the internet connection and run this again."
 	fi
 fi
 
@@ -31,26 +29,25 @@ fi
 usbipd_patch="$script_dir/usbipd-mac.patch"
 if ! (cd "$script_dir/../mac-tools/usbipd-mac" && git apply --reverse --check "$usbipd_patch" &> /dev/null)
 then
-	f_echo "Applying fixes to usbipd-mac..."
+	f_step "Applying this repo's fixes to usbipd-mac..."
 	if ! (cd "$script_dir/../mac-tools/usbipd-mac" && git checkout -q 1c2ab4594653db5859d6773bdd010303a641e98e && git apply "$usbipd_patch")
 	then
-		f_echo "Error applying usbipd-mac.patch. Remove the mac-tools folder and run this script again."
-		exit 1
+		f_fail "Could not apply usbipd-mac.patch." \
+			"Delete the mac-tools folder and run this again."
 	fi
 fi
 
-f_echo "Building usbipd-mac..."
+f_step "Building usbipd-mac (a few minutes the first time)..."
 if ! (cd "$script_dir/../mac-tools/usbipd-mac" && swift build -c release)
 then
 	# Swift's module cache records absolute paths, so a build made before this folder
 	# was moved fails with "PCH was compiled with module cache path ...".
-	f_echo "Retrying with a fresh module cache..."
+	f_warn "Build failed. Retrying with a fresh module cache..."
 	rm -rf "$script_dir/../mac-tools/usbipd-mac/.build/"*/release/ModuleCache
 fi
 if ! (cd "$script_dir/../mac-tools/usbipd-mac" && swift build -c release)
 then
-	f_echo "Error building usbipd-mac. Check the output above."
-	exit 1
+	f_fail "Building usbipd-mac failed (see the lines above)."
 fi
 
 # An unconfigured Platform Cable (03fd:0013) is left without a USB configuration by
@@ -59,15 +56,14 @@ fi
 usb_venv="$script_dir/../mac-tools/usb-venv"
 if [ ! -x "$usb_venv/bin/python3" ]
 then
-	f_echo "Setting up the python environment jtag_connect.sh uses for USB..."
+	f_step "Setting up the Python environment used to talk to the cable..."
 	if ! (python3 -m venv "$usb_venv" && "$usb_venv/bin/pip" install -q libusb1)
 	then
-		f_echo "Error setting up $usb_venv."
-		exit 1
+		f_fail "Could not set up $usb_venv."
 	fi
 fi
 if ! "$usb_venv/bin/python3" -c "import usb1; usb1.USBContext().open()" &> /dev/null
 then
-	f_echo "The libusb library is missing. Install it with 'brew install libusb' and run this script again."
-	exit 1
+	f_fail "The libusb library is missing." \
+		"Run: brew install libusb   — then run setup.sh again."
 fi

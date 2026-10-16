@@ -7,16 +7,18 @@ source "$script_dir/header.sh"
 validate_macos
 
 function cannot_setup_docker {
-    f_echo "Unfortunately, the script could not configure Docker automatically."
-    f_echo "This means that you have to change the settings in the Docker Dashboard yourself:"
-    f_echo "Enable the Virtualization Framework, Rosetta emulation and set Swap to at least 2 GiB."
-    f_echo "Restart Docker after applying the changes and then continue with the installation."
+    f_banner "$c_yellow" "⚠ DOCKER NEEDS A MANUAL SETTING" \
+        "Docker could not be configured automatically. In Docker Desktop → Settings:" \
+        "  General: turn on \"Use Rosetta for x86_64/amd64 emulation on Apple Silicon\"" \
+        "  Resources → Advanced: set Swap to at least 4 GB" \
+        "Click \"Apply & restart\", then run setup.sh again."
     wait_for_user_input
     exit 1
 }
 
 docker_settings_file="$HOME/Library/Group Containers/group.com.docker/settings.json"
 
+f_step "Turning on Rosetta in Docker and raising its swap (Docker restarts)..."
 stop_docker
 
 # check if the settings file is in the expected place
@@ -49,4 +51,4 @@ then
     sed -i "" "s/\"swapMiB\": [0-9]*/\"swapMiB\": $minSwap/" "$docker_settings_file"
 fi
 
-f_echo "Configured Docker successfully"
+f_ok "Docker configured."

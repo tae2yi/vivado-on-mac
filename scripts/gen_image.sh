@@ -9,11 +9,11 @@ validate_macos
 start_docker
 
 # Build the Docker image according to the Dockerfile
-f_echo "Building Docker image..."
+f_step "Building the Linux image Vivado runs in (10-20 minutes the first time)..."
 if ! docker build --platform linux/amd64 -t x64-linux "$script_dir"
 then
-	f_echo "Docker image generation failed!"
-	exit 1
+	f_fail "Building the Docker image failed (see the lines above)." \
+		"A network hiccup is the usual cause: run setup.sh again."
 fi
 
-f_echo "The Docker image was successfully generated."
+f_ok "Docker image built."

@@ -7,6 +7,8 @@ Workspace/
 Desktop/
 installer/
 scripts/install_bin
+scripts/vivado_version
+saved-licenses/
 scripts/mac_address
 scripts/install_configs/*.selected.txt
 mac-tools/

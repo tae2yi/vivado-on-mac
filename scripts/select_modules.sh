@@ -11,6 +11,8 @@ fi
 template="$1"
 output="$2"
 
+source "$(dirname -- "$(readlink -nf $0)")/header.sh"
+
 if [ ! -f "$template" ]; then
 	echo "Error: Template config not found: $template" >&2
 	exit 1
@@ -64,32 +66,31 @@ mv "$tmpdir/menu_sorted.txt" "$tmpdir/menu_items.txt"
 
 # Display menu
 echo ""
-echo "Vivado and Vitis HLS are always installed and cannot be deselected."
-echo "Nothing else is installed unless selected here."
-echo "Every family adds several GB of disk."
+f_info "Vivado itself (with Vitis HLS) is always installed."
+f_info "Nothing below is installed unless you pick it."
 echo ""
 
 while IFS='|' read -r menu_num name token_idx; do
-	echo "  $menu_num) $name"
+	printf '  %s%3s)%s %s\n' "$c_bold" "$menu_num" "$c_reset" "$name"
 done < "$tmpdir/menu_items.txt"
 echo ""
 
 # Input validation loop
 while true; do
-	echo -n "Enter the numbers of the items to install, separated by spaces (for example: 4 7), then press Enter: "
+	f_ask "Type the numbers to install, separated by spaces (for example: 4 7), then press Enter:"
 	if ! read -r input_line; then
 		exit 1
 	fi
 
 	# Check for empty input
 	if [ -z "$input_line" ]; then
-		echo "Error: Please enter at least one number."
+		f_warn "Please type at least one number."
 		continue
 	fi
 
 	# Validate input contains only numbers and spaces
 	if ! echo "$input_line" | grep -q '^[0-9 ]*$'; then
-		echo "Error: Invalid input. Please enter numbers separated by spaces."
+		f_warn "Only numbers and spaces, please."
 		continue
 	fi
 
@@ -98,7 +99,7 @@ while true; do
 	selected_menu_nums=""
 	for num in $input_line; do
 		if [ "$num" -lt 1 ] 2>/dev/null || [ "$num" -gt "$menu_count" ] 2>/dev/null; then
-			echo "Error: Number $num is out of range (1-$menu_count)."
+			f_warn "There is no item $num (choose 1-$menu_count)."
 			valid=false
 			break
 		fi
@@ -114,16 +115,16 @@ while true; do
 
 	# Display selected items for confirmation
 	echo ""
-	echo "Selected items:"
+	f_ok "You picked:"
 	for menu_num in $selected_menu_nums; do
 		name=$(sed -n "${menu_num}p" "$tmpdir/menu_items.txt" | cut -d'|' -f2)
-		echo "  - $name"
+		echo "    - $name"
 	done
 	echo ""
 
 	# Confirmation prompt
 	while true; do
-		echo -n "Install exactly these items [Y/n]? "
+		f_ask "Install exactly these? [Y/n]"
 		if ! read -r confirm; then
 			exit 1
 		fi
@@ -183,7 +184,7 @@ while true; do
 				break
 				;;
 			*)
-				echo "Please answer y or n."
+				f_warn "Please answer y or n."
 				;;
 		esac
 	done

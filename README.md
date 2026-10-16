@@ -1,6 +1,6 @@
 # vivado-on-silicon-mac-2026
 
-Installs **Vivado 2026.1** on Apple Silicon Macs. It runs Vivado inside a Rosetta-accelerated x86_64 Docker container, with the GUI exposed over VNC, and forwards a JTAG cable plugged into the Mac through to the container over USB/IP.
+Installs **Vivado 2026.1** or **2025.2** on Apple Silicon Macs. It runs Vivado inside a Rosetta-accelerated x86_64 Docker container, with the GUI exposed over VNC, and forwards a JTAG cable plugged into the Mac through to the container over USB/IP.
 
 It is in no way associated with Xilinx or AMD. Vivado and Xilinx are trademarks of Xilinx, Inc. / AMD.
 
@@ -57,44 +57,128 @@ The component that has to understand your cable is then Xilinx's own `hw_server`
 
 ### Licensing that survives a restart
 
-Vivado 2026.1 won't open without a license, and the free BASIC one is node-locked to a machine Host ID derived from the container's MAC address. Containers started with `--rm` don't get a stable MAC by default, so `setup.sh` generates one randomly on first run and pins it. It is therefore stable across restarts, and unique to your install — a single hardcoded Host ID shared by everyone who cloned the repo would look like abuse to AMD's licensing backend.
+Vivado 2026.1 won't open without a license (2025.2 needs none for its free devices), and the free BASIC one is node-locked to a machine Host ID derived from the container's MAC address. Containers started with `--rm` don't get a stable MAC by default, so `setup.sh` generates one randomly on first run and pins it. It is therefore stable across restarts, and unique to your install — a single hardcoded Host ID shared by everyone who cloned the repo would look like abuse to AMD's licensing backend.
 
 Beyond this, the repo is deliberately just the Vivado environment: no example projects, no VS Code or Dev Container setup, no Verilog tooling.
 
 ## Quick start
 
-For anyone who just wants the environment running with minimal reading. Every step is explained in more detail further down — come back here if something goes wrong.
+Everything below is copy and paste. Open the **Terminal** app (Applications → Utilities → Terminal), paste each grey box, and press Enter. Every step is explained in more detail further down — come back here if something goes wrong.
 
-1. **Install Docker Desktop** ("Apple Chip" build) and let it install Rosetta if it asks.
-2. **Create a free AMD account** at amd.com, if you don't have one.
-3. **Download the Vivado 2026.1 Web Installer** from AMD's site — look for a file named like `FPGAs_AdaptiveSoCs_Unified_SDI_2026.1_..._Lin64.bin`, roughly a few hundred MB. Don't download the multi-gigabyte full offline installer.
-   1. Open AMD's [Adaptive SoCs & FPGA Design Tools Downloads - 2026.1](https://www.amd.com/en/support/downloads/adaptive-socs-and-fpgas/development-tools/2026-1.html) page. If the link has moved, search Google for `Adaptive SoCs & FPGA Design Tools Downloads - 2026.1`. Make sure **Version** is set to `2026.1`.
+### 1. Install the tools this needs (once per Mac)
 
-      <img src="docs/images/download-version.png" width="620">
+Xcode Command Line Tools (a window pops up: click **Install**; if it says they're already installed, move on):
 
-   2. Under **AMD Unified Installer**, expand **Unified Installer for FPGA & Adaptive SoC Tools – 2026.1** (not the `Update 1 – 2026.1.1` entry below it) and click **Linux Self Extracting Web Installer** — the `BIN` file of a few hundred MB. Skip the Windows `EXE` above it and the `SFD` (TAR/GZIP, about 98 GB) below it.
+```bash
+xcode-select --install
+```
 
-      <img src="docs/images/download-linux-installer.png" width="620">
+[Homebrew](https://brew.sh), skip this if `brew --version` already works:
 
-   3. AMD asks you to sign in and fill in a short export-compliance form before the download starts.
-4. **Clone this repo somewhere with no spaces in the path**, e.g. `~/Documents/vivado-on-silicon-mac-2026` (not `~/Library/Application Support/...`).
-5. Move the downloaded `.bin` file into the cloned folder.
-6. Run:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+This makes `brew` usable in the current window (the Homebrew installer prints how to make it permanent):
+
+```bash
+eval "$(/opt/homebrew/bin/brew shellenv)"
+```
+
+Docker Desktop and libusb:
+
+```bash
+brew install --cask docker && brew install libusb
+```
+
+```bash
+open -a Docker
+```
+
+Accept Docker's terms in the window that opens. You don't need a Docker account; skip the sign-in. You also need a free AMD account: create one at [amd.com](https://www.amd.com) if you don't have one.
+
+### 2. Get this repo
+
+This puts it in `Documents/vivado-on-mac`. Keep it in a folder whose path has no spaces.
+
+```bash
+git clone https://github.com/tae2yi/vivado-on-mac.git ~/Documents/vivado-on-mac
+```
+
+### 3. Download the Vivado installer
+
+Pick a version:
+
+| | **2026.1** (recommended) | **2025.2** |
+|---|---|---|
+| License | free BASIC license, activated once a year (step 5) | none needed for the free devices (Spartan-7, Artix-7, Zynq-7000, …) |
+| Tested here | install, synthesis to bitstream, JTAG programming on a real board | its `hw_server` and cable drivers match 2026.1's and start in the container; a full install and JTAG on a real cable and board not yet tried |
+
+1. Open AMD's [Adaptive SoCs & FPGA Design Tools Downloads - 2026.1](https://www.amd.com/en/support/downloads/adaptive-socs-and-fpgas/development-tools/2026-1.html) page. If the link has moved, search Google for `Adaptive SoCs & FPGA Design Tools Downloads - 2026.1`. Set **Version** to the version you picked.
+
+   <img src="docs/images/download-version.png" width="620">
+
+2. Under **AMD Unified Installer**, expand **Unified Installer for FPGA & Adaptive SoC Tools – 2026.1** (or `– 2025.2`; not an `Update` entry) and click **Linux Self Extracting Web Installer** — the `BIN` file of a few hundred MB. Skip the Windows `EXE` above it and the `SFD` (TAR/GZIP, about 98 GB) below it.
+
+   <img src="docs/images/download-linux-installer.png" width="620">
+
+3. AMD asks you to sign in and fill in a short export-compliance form before the download starts. The file lands in Downloads, named like `FPGAs_AdaptiveSoCs_Unified_SDI_2026.1_..._Lin64.bin`.
+
+Move it into the repo folder:
+
+```bash
+mv ~/Downloads/FPGAs_AdaptiveSoCs_Unified_SDI_*_Lin64.bin ~/Documents/vivado-on-mac/
+```
+
+### 4. Run the installer
+
+```bash
+cd ~/Documents/vivado-on-mac && caffeinate -dim zsh ./scripts/setup.sh
+```
+
+It takes 1–2 hours, mostly downloading; `caffeinate` keeps the Mac awake meanwhile. The script works through 7 numbered stages and tells you what each one is doing. Only the lines starting with a purple **➜** need you:
+
+| It asks | You do |
+|---|---|
+| `Continue? [Y/n]` | press Enter |
+| `Found FPGAs_…_Lin64.bin` → `Use this file? [Y/n]` | press Enter (it also tells you which Vivado version it found) |
+| screen resolution | press Enter for 1920x1080 |
+| a numbered list of device families | type the number of your board's chip only, e.g. `Spartan-7 FPGAs`, press Enter, then Enter again to confirm |
+| `➜ AMD LOGIN` | type your AMD e-mail and password (the password doesn't show while you type) |
+
+It ends with a green **✔ VIVADO … IS INSTALLED** box that says what to do next. If it stops with a red **✖ FAILED** box instead, the box says why and what to try.
+
+### 5. Activate the free BASIC license (2026.1 only)
+
+Vivado 2026.1 refuses to open without this, so don't skip it. On 2025.2, skip to step 6.
+
+1. Start Vivado (step 6). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
+2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with your AMD account.
+3. AMD's site generates a free, node-locked BASIC license for this install, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — `setup.sh` generated one for your install and pins it, so it stays the same every time you restart the container.
+4. AMD emails you the generated `.lic` file. Install it with **Load License → Copy License…**, or just drop it into the `.Xilinx` folder in the repo — that folder is the container's home directory, so Finder works fine for this:
+
+   ```bash
+   open ~/Documents/vivado-on-mac/.Xilinx
    ```
-   caffeinate -dim zsh ./scripts/setup.sh
-   ```
-   and follow the yellow prompts — drag in the `.bin` file when asked, type the numbers of the devices you want installed (only your board's chip, e.g. `Spartan-7 FPGAs`), then log into your AMD account when the container asks for it.
-7. **Activate the free BASIC license** — Vivado 2026.1 refuses to open at all without this, so don't skip it:
-   1. Launch Vivado (Desktop icon or Start Menu, inside the VNC session). Since no license exists yet, the **Vivado License Manager** pops up with an error instead of the main window — that's expected.
-   2. In the License Manager, go to **Obtain License → Get My Full or Purchased Certificate-Based License**, then click **Connect Now**. This opens a real browser to AMD's licensing page — log in with the same AMD account from step 2.
-   3. AMD's site generates a free, node-locked BASIC license for this specific machine, identified by its **Host ID**. You don't need to do anything with the Host ID yourself — `setup.sh` randomly generates one MAC address for your install on first run and pins it (`--mac-address` in `setup.sh`/`start_container.sh`), so it stays the same every time you restart the container, but is unique to your install rather than shared with everyone else using this repo.
-   4. AMD emails you the generated `.lic` file. Install it with **Load License → Copy License…**, or just drop it into the `.Xilinx` folder in this repo — that folder is the container's home directory, so Finder works fine for this.
-   5. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. That's it — it's valid for 12 months, after which you repeat this same process to renew.
-   6. Close the License Manager and launch Vivado again — it should now open normally.
 
-   More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
-8. From then on, just double-click **`Start Vivado.command`** in the repo folder (or run `./scripts/start_container.sh`) to open Vivado.
-9. To use a JTAG cable, plug it in and double-click **`Connect JTAG.command`**, pressing Enter within 5 seconds. Wait for its green **READY** box, then click **Open Target → Auto Connect** in Vivado. See [Connecting a JTAG cable](#connecting-a-jtag-cable).
+5. Back in the License Manager, click **View License Status** and confirm it shows tier `BASIC` with the Host ID matching. It's valid for 12 months, after which you repeat this to renew.
+6. Close the License Manager and start Vivado again — it should now open normally.
+
+More detail and what to do if `Connect Now` doesn't respond: [Activating the free BASIC license](#activating-the-free-basic-license).
+
+### 6. Start Vivado
+
+Double-click **`Start Vivado.command`** in the repo folder, or:
+
+```bash
+cd ~/Documents/vivado-on-mac && ./scripts/start_container.sh
+```
+
+Vivado's desktop opens in Screen Sharing. Keep the Terminal window open while you work.
+
+### 7. Connect a JTAG cable (optional)
+
+Plug the cable in, double-click **`Connect JTAG.command`** and press Enter within 5 seconds. Wait for its green **READY** box, then click **Open Target → Auto Connect** in Vivado. See [Connecting a JTAG cable](#connecting-a-jtag-cable).
 
 If anything above fails, jump to [Troubleshooting](#troubleshooting) or the detailed section for that step.
 
@@ -105,29 +189,36 @@ If anything above fails, jump to [Troubleshooting](#troubleshooting) or the deta
 - Rosetta (the installer prompts you to install it if it's missing)
 - Xcode Command Line Tools, for the `swift` compiler — `setup.sh` builds the USB/IP server used for JTAG forwarding from source. Install with `xcode-select --install` if `swift --version` fails.
 - [Homebrew](https://brew.sh)'s `libusb` (`brew install libusb`), which `jtag_connect.sh` uses to prepare a Xilinx Platform Cable USB II for forwarding
-- A free AMD account — needed both to download installer packages and to activate the free BASIC license
+- A free AMD account — needed to download installer packages, and on 2026.1 to activate the free BASIC license
 - The Vivado **Web Installer** file, downloaded yourself from AMD's site — a single `.bin` file, *not* the multi-GB full offline installer. Put it inside this repo's folder once downloaded. [Quick start](#quick-start) step 3 shows where it is on the download page.
 
 ## Installation
 
-1. Clone this repo **to a path with no spaces** — see [Troubleshooting](#troubleshooting) for why this matters.
-2. Put the Vivado web installer `.bin` file inside the cloned folder.
-3. Run:
-   ```
-   caffeinate -dim zsh ./scripts/setup.sh
-   ```
-4. When asked to drag and drop the installation binary, drag in the `.bin` file itself.
-5. The container builds, then shows a numbered list of every device family and tool the installer offers. **Nothing is preselected** — type the numbers of only what you need, separated by spaces (for example the number next to `Spartan-7 FPGAs`), and confirm. Vivado itself and Vitis HLS are always installed, because AMD's installer bundles them and offers no way to turn them off; everything else is installed only if you pick it. Each extra family adds disk space, so choose only the chip on your board.
-6. You are then prompted to log into your AMD account. This step downloads the selected packages — it's separate from license activation, which happens later.
-7. Batch installation proceeds using the selection you just made, written to `scripts/install_configs/202610.selected.txt` (generated from the `202610.txt` catalog, and gitignored). If a future Vivado version renames its catalog, you may see:
-   ```
-   ERROR - The value specified for Edition (...) is invalid. Valid edition names are "...".
-   ```
-   The error message tells you the correct name directly — edit `install_configs/202610.txt` and rerun `setup.sh`.
+[Quick start](#quick-start) steps 1–4 are the whole installation; this is what `setup.sh` does in each of its stages, for when something goes wrong.
+
+1. **Checking this Mac** — refuses to run as root, from a folder whose path contains a space, or over an existing install (the `Xilinx` folder); needs an internet connection. Then asks you to agree to AMD's EULAs and Apple's Rosetta license.
+2. **Rosetta** — installed if missing.
+3. **Vivado installer file** — uses the one `.bin` file in the repo folder if there is exactly one, otherwise asks you to drag it into the window, and offers to move it into the repo folder if it's elsewhere (the container only sees that folder). It reads the Vivado version from the file's own header, so a renamed file still works, and stops on anything but 2025.2 or 2026.1. The path and version go into `scripts/install_bin` and `scripts/vivado_version`.
+4. **JTAG cable forwarding tools** — runs `setup_usbipd.sh`.
+5. **Docker** — starts Docker Desktop, turns on Rosetta and raises swap in its settings (Docker restarts for this), then builds the `x64-linux` image.
+6. **Container settings** — VNC resolution, the desktop autostart entry, and the container's pinned MAC address.
+7. **Installing Vivado** — inside the container, `install_vivado.sh` goes through four steps:
+   - **A. Choose what to install.** A numbered list of every device family and tool the installer offers. **Nothing is preselected** — type the numbers of only what you need, separated by spaces, and confirm. Vivado itself and Vitis HLS are always installed, because AMD's installer bundles them and offers no way to turn them off. Each extra family adds disk space, so choose only the chip on your board. Your choice is written to `scripts/install_configs/<version>.selected.txt` (e.g. `202610.selected.txt`, gitignored), generated from that version's catalog (`202520.txt` or `202610.txt`).
+   - **B. Unpack the installer.**
+   - **C. Log into your AMD account.** This only lets the installer download the selected packages — it's separate from license activation.
+   - **D. Download and install**, ending in a green box with the next steps for your version.
+
+If the installer rejects the catalog, you may see:
+```
+ERROR - The value specified for Edition (...) is invalid. Valid edition names are "...".
+```
+The error message tells you the correct name directly — edit `scripts/install_configs/<version>.txt` and rerun `setup.sh`.
+
+To start over, run `zsh ./scripts/cleanup.sh`. It asks first, and copies any license file from `.Xilinx` to `saved-licenses/` before deleting the install.
 
 ## Activating the free BASIC license
 
-Vivado 2026.1 requires activating a free, node-locked, annually-renewed **BASIC** license — older `WebPACK`-style "no license file needed at all" licensing doesn't apply here. Do this inside the VNC session, after installation finishes:
+Vivado 2026.1 requires activating a free, node-locked, annually-renewed **BASIC** license (2025.2 doesn't, for its free devices) — older `WebPACK`-style "no license file needed at all" licensing doesn't apply here. Do this inside the VNC session, after installation finishes:
 
 **1. Open the License Manager.** Launching Vivado without a valid license opens it by itself. You can also reach it directly from the Start Menu under **Other → Manage Licenses 2026.1**, which is the easier route once Vivado is working normally.
 
@@ -200,6 +291,8 @@ Every line the script prints starts with a symbol that says what kind of line it
 | `⚠` | yellow | heads-up; in a box, "wait, not ready yet" |
 | `✖` | red | it failed; the box says what to do next |
 
+`setup.sh` and the other install scripts use the same symbols, plus a purple `➜` for lines that need you to type or do something.
+
 The window closes on its own 5 seconds after a successful connection. If something fails, it stays open with the reason and the next thing to try until you press Enter, so an error can't disappear along with the window. This is what a failure looks like, here with no cable plugged in:
 
 <img src="docs/images/jtag-connect-no-cable.svg" width="720" alt="Connect JTAG.command output when no JTAG cable is plugged in: a red FAILED box listing what to do">
@@ -250,7 +343,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 - **Device permissions.** `hw_server` runs as uid 1000, not root, and a freshly attached device node is root-owned. Without a `chmod`, `lsusb` shows the cable while `hw_server` silently can't open it — a confusing failure worth knowing about if you ever connect a device by hand.
 - **Unbinding `ftdi_sio`** for FTDI cables, which the kernel otherwise claims as a serial port.
 
-> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board (HBE-Combo II-DLD): the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`) — see the screenshots at the top — and `Connect JTAG.command` taking a freshly plugged-in cable to READY in a single run. FTDI and Digilent cables haven't been tried on hardware yet. Reports welcome.
+> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board (HBE-Combo II-DLD): the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`) — see the screenshots at the top — and `Connect JTAG.command` taking a freshly plugged-in cable to READY in a single run. FTDI and Digilent cables haven't been tried on hardware yet. On 2025.2, JTAG hasn't been tried on hardware either; what was checked is that its cable udev rules are identical to 2026.1's, its `hw_server` carries the same built-in Platform Cable firmware, and it starts in the container and accepts an `xsdb` connection. Reports welcome.
 
 ## Troubleshooting
 
@@ -260,7 +353,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 | Vivado License Manager: "no valid license was not found" | Expected on first launch — follow [Activating the free BASIC license](#activating-the-free-basic-license). |
 | `Connect Now` in the License Manager does nothing | The container's Firefox isn't working. Ubuntu 22.04's `firefox` apt package is a snap stub that can't run in Docker; this repo's Dockerfile installs a real Firefox from Mozilla's own apt repo instead — make sure you're using the current `scripts/Dockerfile` and rebuilt the image (`./scripts/gen_image.sh`). |
 | Vivado crashes immediately with `realloc(): invalid pointer` | Missing `LD_PRELOAD`, which the container needs set or Vivado dies on startup. Exporting it in a parent shell isn't enough, since it doesn't survive `sudo`; instead `install_vivado.sh` bakes it into the `Exec=` line of every generated `.desktop` launcher right after installation. So this normally only appears if you launch `bin/vivado` some other way — prefix that command with the same `LD_PRELOAD` (copy it from `scripts/de_start.sh`). |
-| `ERROR - The value specified for Edition (...) is invalid` during install | The catalog names in `install_configs/202610.txt` don't match what the installer expects. The error itself states the correct name — edit the file and rerun. |
+| `ERROR - The value specified for Edition (...) is invalid` during install | The catalog names in `install_configs/202610.txt` (or `202520.txt`) don't match what the installer expects. The error itself states the correct name — edit the file and rerun. |
 | Batch install complains about an invalid `Modules=` entry name | Same as above, but for a device/module name instead of the edition. Find the correct name in the installer's error and fix that specific entry (don't remove or reorder others). |
 | `Connect JTAG.command`: "usbipd is missing" | `setup.sh` hasn't been run, or its usbipd-mac build step failed. Run `zsh ./scripts/setup_usbipd.sh`, which does just that step. |
 | `Connect JTAG.command`: "usbipd was built without this repo's fixes" | Your install predates `scripts/usbipd-mac.patch`. Run `zsh ./scripts/setup_usbipd.sh` once; it applies the fixes and rebuilds. |
@@ -276,13 +369,14 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 
 ## Adapting to a different Vivado version or device
 
-- `scripts/setup.sh` and `scripts/install_vivado.sh` hardcode the version string (currently `2026.1` / `202610`) rather than using the original hash-based auto-detection in `scripts/hashes.sh` (unmaintained past 2024.1). Update both if you use a different version.
-- `scripts/install_configs/202610.txt`'s `Modules=` line is a full, ordered list of every catalog entry, all flagged `:0`. `scripts/select_modules.sh` reads that list at install time, shows the family and tool names (the entries that start with a capital letter; the lowercase entries such as `xc7a100t` are individual devices and stay off) as a menu, and writes your choice to `202610.selected.txt`. You don't edit flags by hand. For a different version, copy that version's catalog into a new `<version>.txt` with every flag at `:0` and update the version string in `install_vivado.sh`. If the installer rejects a name, take the correct one from its error message (see [Installation](#installation) step 7) and fix only that entry. Don't remove or reorder entries.
-- Expect the catalog to be renamed between releases rather than merely extended. 2026.1 changed the `Edition` name to `Vivado Design Suite` (from `Vivado ML Standard`) and renamed device families, e.g. `Spartan-7` → `Spartan-7 FPGAs`, so a config from an older version won't carry over untouched.
+- Supported versions are listed in `supported_versions` at the top of `scripts/setup.sh`. `setup.sh` reads the version from the installer's own header (falling back to its file name), and `install_vivado.sh` picks the catalog `scripts/install_configs/<yyyyv0>.txt` for it, e.g. `202610.txt` for 2026.1.
+- To add a version, generate its catalog from that version's installer instead of writing one by hand: unpack the `.bin` with `--noexec --target installer` inside the container, run `installer/xsetup -b ConfigGen`, choose Vivado and the edition, and copy the resulting `~/.Xilinx/install_config.txt` to `install_configs/<yyyyv0>.txt` with `Destination=/home/user/Xilinx` and every `Modules=` flag set to `:0`. Then add the version to `supported_versions`.
+- A catalog's `Modules=` line is a full, ordered list of every entry. `scripts/select_modules.sh` shows the family and tool names (the entries that start with a capital letter; lowercase entries such as `xcv80` are individual devices and stay off) as a menu, and writes your choice to `<yyyyv0>.selected.txt`. You don't edit flags by hand. If the installer rejects a name, take the correct one from its error message and fix only that entry. Don't remove or reorder entries.
+- Expect the catalog to be renamed between releases rather than merely extended. 2026.1 changed the `Edition` name to `Vivado Design Suite` (2025.2 still uses `Vivado ML Standard`), so a catalog from one version won't carry over to another.
 
 ## Files overview
 
-Supporting pieces you rarely touch directly: `header.sh` (shared shell functions), `configure_docker.sh` (Docker settings), `gen_image.sh` (image build), `hashes.sh` (installer hashes, unmaintained past 2024.1), `linux_start.sh` (container entry point), `cleanup.sh` (removes Vivado and dotfiles), `install_bin` (path to the installer), `vnc_resolution`, `vncpasswd`.
+Supporting pieces you rarely touch directly: `header.sh` (shared shell functions), `configure_docker.sh` (Docker settings), `gen_image.sh` (image build), `linux_start.sh` (container entry point), `cleanup.sh` (removes Vivado and dotfiles, keeping a copy of the license), `install_bin` and `vivado_version` (the installer's path and version, written by `setup.sh`), `vnc_resolution`, `vncpasswd`.
 
 The parts that carry this project's own behaviour:
 
@@ -290,13 +384,13 @@ The parts that carry this project's own behaviour:
 - `scripts/jtag_connect.sh` — finds the cable by vendor ID, binds it on the Mac, replaces any stale attachment of it, attaches it inside the container, and applies the fixups udev would normally handle. For a Platform Cable it also starts `hw_server` and prompts it to load the firmware, waits for the cable to re-enumerate, re-attaches it and leaves `hw_server` running for Vivado to join
 - `scripts/start_container.sh` — no longer runs `xvcd`; the container now gets `--privileged` and `/dev/bus/usb` so it can see a USB/IP-attached cable, including one attached after it started
 - `scripts/de_start.sh` — `hw_server` searches the local USB bus instead of connecting to an XVC server on the Mac
-- `scripts/setup.sh` — additionally runs `setup_usbipd.sh`
+- `scripts/setup.sh` — the 7-stage installer: finds the installer file and reads its version, runs `setup_usbipd.sh`, configures Docker and builds the image, then runs `install_vivado.sh` in the container. Its output uses the same `▶ ✔ ⚠ ✖` symbols as `Connect JTAG.command`, plus `➜` for lines that need you
 - `scripts/setup_usbipd.sh` — clones usbipd-mac into `mac-tools/` (gitignored), applies `usbipd-mac.patch` to it and builds it, and sets up the python environment with `libusb1` that `jtag_connect.sh` uses. Can be run on its own
 - `scripts/usbipd-mac.patch` — fixes usbipd-mac needs before a Platform Cable can program an FPGA through it; the top of the file explains each one
 - `scripts/Dockerfile` — installs `usbutils`, and builds the `usbip` client from the kernel source tree, pinned to the `v6.12` release that matches Docker Desktop's kernel. That build exists because Ubuntu has no standalone `usbip` package: it ships the binary only inside `linux-tools-<version>-generic`, pinned to a kernel version that Docker Desktop's LinuxKit kernel has no package for. Also carries a real Firefox from Mozilla's apt repo, the extra libraries Vivado's `installLibs.sh` expects, and an LSB-compatible loader symlink that `lmutil` needs
 - `scripts/mac_address` — the container's pinned MAC, randomly generated on first run and gitignored; see [Licensing that survives a restart](#licensing-that-survives-a-restart)
 - `scripts/select_modules.sh` — asks which device families and tools to install and writes the batch config the installer uses, so only what you choose (plus the bundled Vivado and Vitis HLS) is downloaded
-- `install_configs/202610.txt` — 2026.1 install catalog (all entries off; `select_modules.sh` turns on your choices in a generated `202610.selected.txt`)
+- `install_configs/202610.txt`, `install_configs/202520.txt` — the 2026.1 and 2025.2 install catalogs (all entries off; `select_modules.sh` turns on your choices in a generated `<yyyyv0>.selected.txt`)
 
 ## License, copyright and trademark information
 
