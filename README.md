@@ -112,7 +112,7 @@ Pick a version:
 | | **2026.1** (recommended) | **2025.2** |
 |---|---|---|
 | License | free BASIC license, activated once a year (step 5) | none needed for the free devices (Spartan-7, Artix-7, Zynq-7000, …) |
-| Tested here | install, synthesis to bitstream, JTAG programming on a real board | its `hw_server` and cable drivers match 2026.1's and start in the container; a full install and JTAG on a real cable and board not yet tried |
+| Tested here | install, synthesis to bitstream, JTAG programming on a real board | JTAG programming on a real board (with 2025.2's `hw_server`); a full Vivado install not yet tried |
 
 1. Open AMD's [Adaptive SoCs & FPGA Design Tools Downloads - 2026.1](https://www.amd.com/en/support/downloads/adaptive-socs-and-fpgas/development-tools/2026-1.html) page. If the link has moved, search Google for `Adaptive SoCs & FPGA Design Tools Downloads - 2026.1`. Set **Version** to the version you picked.
 
@@ -343,7 +343,7 @@ The container runs no udev daemon, so Vivado's `52-xilinx-*.rules` never fire. T
 - **Device permissions.** `hw_server` runs as uid 1000, not root, and a freshly attached device node is root-owned. Without a `chmod`, `lsusb` shows the cable while `hw_server` silently can't open it — a confusing failure worth knowing about if you ever connect a device by hand.
 - **Unbinding `ftdi_sio`** for FTDI cables, which the kernel otherwise claims as a serial port.
 
-> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board (HBE-Combo II-DLD): the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`) — see the screenshots at the top — and `Connect JTAG.command` taking a freshly plugged-in cable to READY in a single run. FTDI and Digilent cables haven't been tried on hardware yet. On 2025.2, JTAG hasn't been tried on hardware either; what was checked is that its cable udev rules are identical to 2026.1's, its `hw_server` carries the same built-in Platform Cable firmware, and it starts in the container and accepts an `xsdb` connection. Reports welcome.
+> **Status:** verified against real hardware with a Xilinx Platform Cable USB II and a Spartan-7 `xc7s75fgga484-1` board (HBE-Combo II-DLD): the firmware load, `hw_server` detecting the cable and reading the FPGA's IDCODE, and programming a bitstream (`End of startup status: HIGH`) — see the screenshots at the top — and `Connect JTAG.command` taking a freshly plugged-in cable to READY in a single run. FTDI and Digilent cables haven't been tried on hardware yet. 2025.2's `hw_server` passed the same test on the same board: it loaded the Platform Cable's firmware, `Connect JTAG.command` reached READY in 35 seconds, and it programmed a bitstream (DONE pin high, end of startup reached) in about 13 seconds. That ran with AMD's standalone Hardware Server 2025.2 rather than a full Vivado 2025.2 install. Reports welcome.
 
 ## Troubleshooting
 
